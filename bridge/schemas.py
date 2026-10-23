@@ -272,6 +272,15 @@ class RoutingDecision(BaseModel):
     # For FULL_LOCAL: one handoff request. For PARTIAL_LOCAL: one per bounded subtask.
     subrequests: list[HandoffRequest] = Field(default_factory=list)
     assessment: Optional[TaskAssessment] = None
+    # Lightweight task summary carried on the decision so explain() can
+    # report difficulty/length even when the full assessment is not attached
+    # (route() deliberately does not attach it).
+    difficulty: Optional[int] = Field(
+        default=None, description="Assessed difficulty (1-5) carried on the decision.")
+    difficulty_label: Optional[str] = Field(
+        default=None, description="Human-readable difficulty label.")
+    length: Optional[LengthLevel] = Field(
+        default=None, description="Assessed length level.")
     dry_run: bool = Field(default=False, description="True when this decision was "
                                                      "computed in dry-run mode; no "
                                                      "transport call should be made.")
@@ -281,8 +290,15 @@ class RoutingDecision(BaseModel):
         parts = [f"kind={self.kind.value}", f"model={self.model_alias or '-'}"]
         if self.assessment is not None:
             a = self.assessment
-            parts.append(f"difficulty={a.difficulty}/{a.difficulty_label.value}")
-            parts.append(f"length={a.length.value}")
+            difficulty, label, length = a.difficulty, a.difficulty_label.value, a.length.value
+        elif self.difficulty is not None:
+            difficulty, label = self.difficulty, (self.difficulty_label or "Unknown")
+            length = self.length.value if self.length is not None else "-"
+        else:
+            difficulty = label = length = None
+        if difficulty is not None:
+            parts.append(f"difficulty={difficulty}/{label}")
+            parts.append(f"length={length}")
         if self.subrequests:
             parts.append(f"subrequests={len(self.subrequests)}")
         parts.append(f"reason={self.reason}")

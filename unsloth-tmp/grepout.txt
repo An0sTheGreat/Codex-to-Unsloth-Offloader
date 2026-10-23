@@ -1,0 +1,8 @@
+271:    - `Router`/`RoutingDecision` are interface-only; Phase 3 (classifier) and Phase 4 (routing policy) implement `assess()`/`route()`.
+278:    - Router classifier (Phase 3) and routing policy (Phase 4) not implemented - only the interface.
+309:- **Phase 3 — Coding Task Classifier (2026-10-22): COMPLETE.**
+316:    - Classifier is a standalone class, not a `Router` subclass yet; Phase 4 wires it into a concrete `Router` (assess separate from route, per the `Router` docstring design).
+317:    - Risk flags live on the assessment (schema), so the Phase 4 router and the Phase 10 footer can both consume them.
+320:    - No config knobs in Phase 3 (deterministic rules per spec); routing thresholds/model alias are Phase 4's.
+321:  - **Known issues / remaining:** none in the classifier. Phase 4 (routing policy — `Router.route()` implementation, model alias from config, dry-run toggle, context budget) is next.
+322:  - **Next agent (Phase 4):** implement `route()` in a concrete `Router` consuming `TaskAssessment` (risk flags, difficulty, length, `is_high_risk`), produce `RoutingDecision` with `HandoffRequest` subrequests, wire in `TaskClassifier`, add policy tests (incl. dry-run + config toggle).

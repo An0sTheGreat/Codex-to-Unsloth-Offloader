@@ -27,6 +27,7 @@ from .config import OffloaderConfig
 from .schemas import (
     HandoffRequest,
     LengthLevel,
+    ModelProfile,
     RepositoryContext,
     RoutingDecision,
     RoutingDecisionKind,
@@ -115,8 +116,11 @@ class PolicyRouter(Router):
        ``config.max_validation_failures``.
     4. Packaged context must fit ``config.context_budget_tokens``.
     5. High-risk flags force Keep in Codex.
-    6. Difficulty must lie in the profile's ``use_for_difficulty`` and at or
-       below ``config.max_difficulty_full_handoff``.
+    6. Difficulty must lie in the profile's ``use_for_difficulty``; for the
+       built-in default profile it must also be at or below
+       ``config.max_difficulty_full_handoff``. A custom profile's
+       ``use_for_difficulty`` is fully authoritative (it may enable difficulties
+       above the default ceiling).
     7. Scope within ``profile.max_default_length`` -> full local handoff;
        otherwise partial handoff of bounded subtasks.
     """
@@ -150,39 +154,46 @@ class PolicyRouter(Router):
         profile = config.model_profile
         available, model_alias, model_note = self._model_available(loaded_model, config)
 
+        # Lightweight summary carried on the decision so explain() can report
+        # difficulty/length even though the full assessment is not attached.
+        summary = dict(
+            difficulty=assessment.difficulty,
+            difficulty_label=assessment.difficulty_label,
+            length=assessment.length,
+        )
+
         if not available:
-            return self._keep(model_alias, model_note, config)
+            return self._keep(model_alias, model_note, config, **summary)
         if not config.auto_handoff_enabled:
             return self._keep(model_alias,
                               "automatic handoff disabled (auto_handoff_enabled=false)",
-                              config)
+                              config, **summary)
         if validation_failures >= config.max_validation_failures:
             return self._keep(model_alias,
                               f"validation failed {validation_failures}x for this task "
                               f"(limit {config.max_validation_failures}); keep in Codex",
-                              config)
+                              config, **summary)
         if context_tokens is not None and context_tokens > config.context_budget_tokens:
             return self._keep(model_alias,
                               f"packaged context ~{context_tokens} tokens exceeds "
                               f"budget {config.context_budget_tokens} tokens; keep in Codex",
-                              config)
+                              config, **summary)
         if assessment.is_high_risk:
             flags = ", ".join(f.value for f in assessment.risk_flags)
-            return self._keep(model_alias, f"high-risk flags ({flags}); keep in Codex", config)
-        if (assessment.difficulty not in profile.use_for_difficulty
-                or assessment.difficulty > config.max_difficulty_full_handoff):
+            return self._keep(model_alias, f"high-risk flags ({flags}); keep in Codex", config, **summary)
+        if not self._difficulty_eligible(assessment, profile, config):
             return self._keep(model_alias,
                               f"difficulty {assessment.difficulty} not eligible "
                               f"(profile use_for_difficulty={profile.use_for_difficulty}, "
                               f"max_difficulty_full_handoff={config.max_difficulty_full_handoff}); "
                               f"keep in Codex",
-                              config)
+                              config, **summary)
 
         if _LENGTH_ORDINAL[assessment.length] <= _LENGTH_ORDINAL[profile.max_default_length]:
             reason = (f"difficulty {assessment.difficulty} eligible "
                       f"(use_for_difficulty={profile.use_for_difficulty}), "
                       f"{assessment.length.value} scope within max "
-                      f"{profile.max_default_length.value}; {model_note}")
+                      f"{profile.max_default_length.value}; routing to {model_alias}; {model_note}")
             return RoutingDecision(
                 kind=RoutingDecisionKind.FULL_LOCAL,
                 model_alias=model_alias,
@@ -190,17 +201,19 @@ class PolicyRouter(Router):
                 subrequests=[self._build_request(assessment, task_description, model_alias,
                                                  profile=profile)],
                 dry_run=config.dry_run,
+                **summary,
             )
 
         reason = (f"{assessment.length.value} scope exceeds profile max "
-                  f"{profile.max_default_length.value}; partial handoff of bounded "
-                  f"subtasks; {model_note}")
+                  f"{profile.max_default_length.value}; routing to {model_alias}; partial handoff of "
+                  f"bounded subtasks; {model_note}")
         return RoutingDecision(
             kind=RoutingDecisionKind.PARTIAL_LOCAL,
             model_alias=model_alias,
             reason=reason,
             subrequests=self._partial_subrequests(assessment, task_description, profile, model_alias),
             dry_run=config.dry_run,
+            **summary,
         )
 
     def plan(self, task_description: str, *, context: Optional[dict] = None, config=None,
@@ -236,9 +249,28 @@ class PolicyRouter(Router):
                                f"capability unknown - conservative fallback")
         return True, loaded_model.display_name, f"loaded model {loaded_model.display_name!r} matches profile"
 
-    def _keep(self, model_alias, reason, config):
+    def _keep(self, model_alias, reason, config, *, difficulty=None, difficulty_label=None,
+              length=None):
         return RoutingDecision(kind=RoutingDecisionKind.KEEP_IN_CODEX, model_alias=model_alias,
-                               reason=reason, subrequests=[], dry_run=config.dry_run)
+                               reason=reason, subrequests=[], dry_run=config.dry_run,
+                               difficulty=difficulty, difficulty_label=difficulty_label,
+                               length=length)
+
+    def _difficulty_eligible(self, assessment, profile, config) -> bool:
+        """Return True when the assessment's difficulty is eligible for a full
+        local handoff.
+
+        The profile's ``use_for_difficulty`` is the set of difficulties this
+        local model is good for. ``config.max_difficulty_full_handoff`` is a
+        safety ceiling that applies to the built-in default profile; a custom
+        profile (one whose ``use_for_difficulty`` differs from the default) is
+        fully authoritative and may enable difficulties above the default
+        ceiling.
+        """
+        if profile.use_for_difficulty != ModelProfile().use_for_difficulty:
+            return assessment.difficulty in profile.use_for_difficulty
+        return (assessment.difficulty in profile.use_for_difficulty
+                and assessment.difficulty <= config.max_difficulty_full_handoff)
 
     def _build_request(self, assessment, task_description, model_alias, *, profile,
                        length=None, difficulty=None, note=""):
@@ -266,15 +298,21 @@ class PolicyRouter(Router):
 
     def _partial_subrequests(self, assessment, task_description, profile, model_alias):
         sub_difficulty = min(assessment.difficulty, 3)
-        return [
-            self._build_request(
-                assessment,
-                f"{task_description} - {focus}" if task_description else focus,
-                model_alias, profile=profile,
-                length=LengthLevel.SHORT, difficulty=sub_difficulty,
-                note=f"Bounded subtask ({focus}) of a larger task."),
-            for focus, _ in _PARTIAL_SUBTASKS
-        ]
+        subrequests = []
+        for focus, _ in _PARTIAL_SUBTASKS:
+            task = f"{task_description} - {focus}" if task_description else focus
+            subrequests.append(
+                self._build_request(
+                    assessment,
+                    task,
+                    model_alias,
+                    profile=profile,
+                    length=LengthLevel.SHORT,
+                    difficulty=sub_difficulty,
+                    note=f"Bounded subtask ({focus}) of a larger task.",
+                )
+            )
+        return subrequests
 
 
 __all__ = ["Router", "PolicyRouter"]
