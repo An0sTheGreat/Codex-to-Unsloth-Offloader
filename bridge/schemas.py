@@ -155,6 +155,36 @@ class RepositoryContext(BaseModel):
     relevant_snippets: list[Snippet] = Field(default_factory=list)
     context_budget_tokens: int = Field(default=16384, ge=0, description="Token budget for the packaged context.")
 
+
+# ---------------------------------------------------------------------------
+# Phase 5 context packaging
+# ---------------------------------------------------------------------------
+
+class PackageStatus(str, Enum):
+    """Outcome of context packaging (Phase 5)."""
+    OK = "ok"
+    REDUCED = "reduced"                  # optional context trimmed to fit budget
+    NEEDS_SCOPE_REDUCTION = "needs_scope_reduction"
+
+
+class BlockedFile(BaseModel):
+    """A file blocked from the packaged context (secret/excluded file)."""
+    path: str
+    reason: str
+
+
+class ContextPackage(BaseModel):
+    """Result of packaging the minimum repository context for a handoff (Phase 5)."""
+    status: PackageStatus
+    repository_context: RepositoryContext
+    acceptance_criteria: list[str] = Field(default_factory=list)
+    blocked: list[BlockedFile] = Field(default_factory=list)
+    tokens_used: int = Field(default=0, ge=0)
+    budget_tokens: int = Field(default=0, ge=0)
+    notes: list[str] = Field(default_factory=list)
+    redacted_paths: list[str] = Field(default_factory=list)
+
+
 class OutputContract(BaseModel):
     """What the local worker must return (handoff.md section 6)."""
     format: OutputFormat = OutputFormat.UNIFIED_DIFF

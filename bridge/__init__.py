@@ -28,6 +28,9 @@ from .schemas import (
     TaskAssessment,
     ValidationOutcome,
     ValidationOutcomeKind,
+    BlockedFile,
+    ContextPackage,
+    PackageStatus,
 )
 from .config import OffloaderConfig, get_project_root, load_config
 from .errors import (
@@ -46,6 +49,7 @@ from .errors import (
 from .classifier import TaskClassifier
 from .routing import Router, RoutingDecision, PolicyRouter
 from .transport import MockTransport, Transport, UnslothApiTransport
+from .context import ContextPackager, estimate_tokens
 
 __version__ = "0.1.0"
 
@@ -66,6 +70,12 @@ __all__ = [
     "TaskAssessment",
     "ValidationOutcome",
     "ValidationOutcomeKind",
+    "BlockedFile",
+    "ContextPackage",
+    "PackageStatus",
+    # context
+    "ContextPackager",
+    "estimate_tokens",
     # config
     "OffloaderConfig",
     "get_project_root",
