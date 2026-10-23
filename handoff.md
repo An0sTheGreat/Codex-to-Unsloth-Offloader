@@ -342,6 +342,12 @@ Prompt bodies and source snippets should be excluded from persistent logs by def
   - **Known issues / remaining:** no live-Unsloth dependency needed (packager is pure aside from reading project files). The end-to-end live round-trip (transport → route → validate) and the Codex orchestration-path wiring (assess → route → offload → validate → footer, surfacing `RoutingDecision.explain()`) remain — carried from Phase 4.
   - **Next agent:** wire the full `route()` → offload → validate → footer orchestration path for real Codex use, and add an end-to-end live round-trip test.
 
+- **Docs reconciliation (2026-10-23): DONE.**
+  - **What was changed:** made the three handoff/state documents agree on phase status so the current state is unambiguous. Added `> **Status: PASSED**` markers to Phases 1, 2, 4, 5 in `docs/development_plan.md` (only Phases 0 and 3 were previously marked, while `handoff.md` listed 1, 2, 4, 5 as complete); added the previously-missing Phase 4 status bullet to `docs/readme.md` ("Project status") and updated the Phase 3 bullet's stale "Routing policy (Phase 4) follows." to "Routing policy (Phase 4) is complete (see the entry below)."; corrected the stale Phase 2 follow-up note in `handoff.md` — leftover diagnostic probes `probe_smoke.py` / `probe_fallback.py` were deleted (no longer present in the project root).
+  - **Files modified:** `docs/development_plan.md`, `docs/readme.md`, `handoff.md` (docs only; no code changes).
+  - **Validation:** all three docs cross-checked for consistency (6 `Status: PASSED` markers now present in `development_plan.md`; Phase 4 bullet present in `docs/readme.md`; both stale strings removed). Full unittest suite still **171 tests, all OK** (docs-only change, no code impact). Committed as `1b62d4d`.
+  - **Known issues / remaining:** none in the docs. Next coding work: Phase 6 (Worker Prompt and Output Contract) — add the single schema-correction retry for malformed output in `bridge/transport.py send()` plus a test (the bounded-worker prompt, `diff` field, `structured` field, and 5-state parsing already exist from Phase 2); then Phase 7 (Patch Scope Validation).
+
 **Live smoke-test command (user shell):**
 ```powershell
 cd "Y:\\Programs\\Codex to Unsloth Offloader"
