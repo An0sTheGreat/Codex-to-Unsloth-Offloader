@@ -321,6 +321,19 @@ Prompt bodies and source snippets should be excluded from persistent logs by def
   - **Known issues / remaining:** none in the classifier. Phase 4 (routing policy — `Router.route()` implementation, model alias from config, dry-run toggle, context budget) is next.
   - **Next agent (Phase 4):** implement `route()` in a concrete `Router` consuming `TaskAssessment` (risk flags, difficulty, length, `is_high_risk`), produce `RoutingDecision` with `HandoffRequest` subrequests, wire in `TaskClassifier`, add policy tests (incl. dry-run + config toggle).
 
+- **Phase 4 — Model Routing Policy (2026-10-22): COMPLETE.**
+  - **What was done:**
+    - Concrete `PolicyRouter` in `bridge/routing.py` implementing the deterministic `route()` policy on the Phase 3 `TaskAssessment`, plus the global `auto_handoff_enabled` toggle and `dry_run` mode.
+    - Configurable `ModelProfile` (name, `use_for_difficulty`, `max_default_length`); default targets **Ternary Bonsai 2 27B PTQ1_0** (difficulty 1-3, full handoff up to `MEDIUM`). A *detected* matching model uses the actual loaded display name as the alias; mismatch/unknown capability degrades conservatively to Keep in Codex.
+    - Routing outputs: `FULL_LOCAL` (1 `HandoffRequest`), `PARTIAL_LOCAL` (1 per bounded subtask, difficulty capped at 3, `Short`), `KEEP_IN_CODEX`.
+    - Rules: model availability (detected model must match `config.local_model_match`), `auto_handoff_enabled`, validation failures (`max_validation_failures`, default 2), context budget (`context_budget_tokens`, default 16384), `is_high_risk`, difficulty eligibility.
+    - Concise log-safe `RoutingDecision.explain()` for logs/UI.
+  - **Files modified:** `bridge/schemas.py` (summary fields on `RoutingDecision`; `explain()`), `bridge/routing.py` (`route()`, `_keep()`, `_difficulty_eligible()`), `tests/test_routing_policy.py` (22 tests).
+  - **Validation:** full suite `python -m unittest discover -s tests -p "test_*.py"` → **146 tests, all OK**; no live Unsloth required. Live `python -m bridge.offload --smoke` round-trip **PASSED** in the user's shell: `model.id = 0. GOAT - Ternary Bonsai 2 27B｜PTQ1_0`, `loaded: true`, `worker_result.state == completed` (see `docs/readme.md` and `docs/discovery.md`).
+  - **Key decisions:** profile `use_for_difficulty` is the difficulty source of truth; `max_difficulty_full_handoff` is a ceiling that applies only to the built-in default profile (a custom profile is fully authoritative and may enable difficulties above the default ceiling). `route()` does not attach the full assessment; it carries a lightweight summary (`difficulty`, `difficulty_label`, `length`) so `explain()` reports those fields even when the assessment is not attached.
+  - **Known issues / remaining:** none for the routing policy itself. Next: wire `route()` into the Codex orchestration path and the Coding Task Assessment footer, and add an end-to-end live round-trip test (transport → route → validate).
+  - **Next agent (Phase 5):** integrate the `PolicyRouter` into the Codex orchestration path (assess → route → offload → validate → footer), surfacing `RoutingDecision.explain()` in logs/UI.
+
 **Live smoke-test command (user shell):**
 ```powershell
 cd "Y:\\Programs\\Codex to Unsloth Offloader"
@@ -335,7 +348,7 @@ python -m bridge.offload --smoke
 - **Execution:** Code complete and unit-tested; user to run `python -m bridge.offload --smoke` to confirm live `state: completed`.
 
 ### Coding Task Assessment
-- **Difficulty:** 2 — Easy — prompt-string rewrite + 4 focused unit tests
-- **Length:** Short — 2 files, prompt logic only, no transport/parse behavior changed
-- **Smaller-LLM Offload:** Yes — bounded prompt + test edits
-- **Execution:** Local handoff (code done); live smoke test must run in the user's shell (environment-gated)
+- **Difficulty:** 3 — Moderate — routing policy implementation + 22 policy tests
+- **Length:** Short — 3 files (schemas, routing, new test module); no transport/parse behavior changed
+- **Smaller-LLM Offload:** Yes — bounded routing policy + tests
+- **Execution:** Code complete and unit-tested (146/146 pass); live smoke test PASSED in the user's shell (`state: completed`)

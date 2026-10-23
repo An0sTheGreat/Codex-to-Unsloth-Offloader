@@ -102,3 +102,13 @@ Transport surface is known. **Phase 1 (Project Skeleton and Contracts) may proce
 2. Decide final wire format (`/v1/responses` vs `/v1/chat/completions`) and implement the transport adapter with mocks.
 3. Define how the user supplies the API key (env var vs local config file) and confirm the loopback-only default.
 
+## Phase 2/4 resolution of open items
+
+- **Exact `GET /v1/models` id:** confirmed live via the `--smoke` round-trip — id/display_name = `0. GOAT - Ternary Bonsai 2 27B｜PTQ1_0` (note the full-width `｜`, not an ASCII `|`), `loaded: true`, `context_length: 80000`. The transport matches by substring (`config.local_model_match`, default `"Ternary Bonsai 2 27B"`) rather than exact string, as recommended above.
+- **Final wire format:** decided — **`POST /v1/chat/completions`** is the primary endpoint (fast and returns valid `WorkerResult` JSON on the current Unsloth build); `POST /v1/responses` is retained as a fallback (live probing showed it unreliable/hanging). The `UnslothApiTransport` in `bridge/transport.py` implements this with a mocked `requests.Session`.
+- **API key supply:** env var only — prefer `UNSLOTH_STUDIO_AUTH_TOKEN`, fall back to `UNSLOTH_API_KEY`; never logged. Loopback-only default (`127.0.0.1:8888`) confirmed.
+
+## Gate (updated)
+
+Phases 0–4 are complete: transport, classifier, and routing policy are implemented and unit-tested (146 tests, all OK), and the live `--smoke` round-trip PASSED. **Phase 5 (orchestration integration — wiring `route()` into the Codex path and the Coding Task Assessment footer) may proceed.**
+
