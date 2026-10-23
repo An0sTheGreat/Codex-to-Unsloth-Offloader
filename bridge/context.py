@@ -37,6 +37,7 @@ from typing import Optional
 from .config import OffloaderConfig, get_project_root
 from .schemas import (
     BlockedFile,
+    ContextPackage,
     PackageStatus,
     RepositoryContext,
     Snippet,

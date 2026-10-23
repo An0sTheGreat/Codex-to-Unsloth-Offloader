@@ -24,10 +24,12 @@ from typing import Optional
 
 from .classifier import TaskClassifier
 from .config import OffloaderConfig
+from .context import ContextPackager
 from .schemas import (
     HandoffRequest,
     LengthLevel,
     ModelProfile,
+    PackageStatus,
     RepositoryContext,
     RoutingDecision,
     RoutingDecisionKind,
@@ -71,10 +73,20 @@ task (Phase 3), :meth:`route` turns an assessment into a decision (Phase 4).
 
     # -- convenience --
 
-    def plan(self, task_description: str, *, context: Optional[dict] = None, config=None) -> RoutingDecision:
-        """Assess then route, in one call (for the Codex orchestration path)."""
+    def plan(self, task_description: str, *, context: Optional[dict] = None, config=None,
+             scope: Optional[dict] = None, project_root=None) -> RoutingDecision:
+        """Assess then route, in one call (for the Codex orchestration path).
+
+        ``scope``/``project_root`` are forwarded to :meth:`route` only when
+        provided, so routers whose ``route`` predates Phase 5 (signature
+        ``route(assessment, *, config=None)``) remain compatible.
+        """
         assessment = self.assess(task_description, context=context)
-        decision = self.route(assessment, config=config)
+        if scope is not None or project_root is not None:
+            decision = self.route(assessment, config=config, scope=scope,
+                                  project_root=project_root)
+        else:
+            decision = self.route(assessment, config=config)
         decision.assessment = assessment
         return decision
 
@@ -134,7 +146,8 @@ class PolicyRouter(Router):
 
     def route(self, assessment: TaskAssessment, *, config=None, loaded_model=None,
               validation_failures: int = 0, context_tokens: Optional[int] = None,
-              task_description: Optional[str] = None) -> RoutingDecision:
+              task_description: Optional[str] = None, scope: Optional[dict] = None,
+              project_root=None) -> RoutingDecision:
         """Turn an assessment into a :class:`RoutingDecision` (Phase 4).
 
         :param assessment: The :class:`TaskAssessment` to route.
@@ -147,6 +160,14 @@ class PolicyRouter(Router):
             validation so far.
         :param context_tokens: Estimated token size of the packaged context.
         :param task_description: Original task text, used to phrase subrequests.
+        :param scope: Optional task-scope dict for Phase 5 context packaging
+            (``allowed_files``, ``read_only_files``, ``snippets``, ``summary``,
+            ``acceptance_criteria``). When given, the
+            :class:`~bridge.context.ContextPackager` runs before routing; on
+            ``needs_scope_reduction`` or budget overflow the decision is
+            KEEP_IN_CODEX (overflow is handled before model invocation).
+        :param project_root: Optional project root for packaging; defaults to
+            :func:`~bridge.config.get_project_root`.
         :return: A :class:`RoutingDecision` for FULL_LOCAL, PARTIAL_LOCAL, or
             KEEP_IN_CODEX, with a concise ``reason`` and ``dry_run`` flag.
         """
@@ -173,6 +194,22 @@ class PolicyRouter(Router):
                               f"validation failed {validation_failures}x for this task "
                               f"(limit {config.max_validation_failures}); keep in Codex",
                               config, **summary)
+        # Phase 5: package context from the task scope before the budget check,
+        # so overflow is handled before any model invocation.
+        packaged = None
+        if scope is not None:
+            packager = ContextPackager(config, project_root)
+            packaged = packager.package(scope)
+            if packaged.status is PackageStatus.NEEDS_SCOPE_REDUCTION:
+                return self._keep(model_alias,
+                                  f"context overflow: required context ~"
+                                  f"{packaged.tokens_used} tokens exceeds "
+                                  f"budget {packaged.budget_tokens} tokens "
+                                  f"(needs scope reduction); keep in Codex",
+                                  config, **summary)
+            if context_tokens is None:
+                context_tokens = packaged.tokens_used
+
         if context_tokens is not None and context_tokens > config.context_budget_tokens:
             return self._keep(model_alias,
                               f"packaged context ~{context_tokens} tokens exceeds "
@@ -199,7 +236,7 @@ class PolicyRouter(Router):
                 model_alias=model_alias,
                 reason=reason,
                 subrequests=[self._build_request(assessment, task_description, model_alias,
-                                                 profile=profile)],
+                                                 profile=profile, packaged=packaged)],
                 dry_run=config.dry_run,
                 **summary,
             )
@@ -211,20 +248,23 @@ class PolicyRouter(Router):
             kind=RoutingDecisionKind.PARTIAL_LOCAL,
             model_alias=model_alias,
             reason=reason,
-            subrequests=self._partial_subrequests(assessment, task_description, profile, model_alias),
+            subrequests=self._partial_subrequests(assessment, task_description, profile,
+                                                  model_alias, packaged=packaged),
             dry_run=config.dry_run,
             **summary,
         )
 
     def plan(self, task_description: str, *, context: Optional[dict] = None, config=None,
              loaded_model=None, validation_failures: int = 0,
-             context_tokens: Optional[int] = None) -> RoutingDecision:
+             context_tokens: Optional[int] = None, scope: Optional[dict] = None,
+             project_root=None) -> RoutingDecision:
         """Assess then route, in one call (for the Codex orchestration path)."""
         assessment = self.assess(task_description, context=context)
         decision = self.route(assessment, config=config, loaded_model=loaded_model,
                               validation_failures=validation_failures,
                               context_tokens=context_tokens,
-                              task_description=task_description)
+                              task_description=task_description, scope=scope,
+                              project_root=project_root)
         decision.assessment = assessment
         return decision
 
@@ -273,30 +313,37 @@ class PolicyRouter(Router):
                 and assessment.difficulty <= config.max_difficulty_full_handoff)
 
     def _build_request(self, assessment, task_description, model_alias, *, profile,
-                       length=None, difficulty=None, note=""):
+                       length=None, difficulty=None, note="", packaged=None):
         task = (task_description or assessment.reason).strip()
+        if packaged is not None:
+            repository_context = packaged.repository_context
+            acceptance_criteria = list(packaged.acceptance_criteria or [])
+        else:
+            repository_context = RepositoryContext(
+                summary=(f"Routed to {model_alias}. Difficulty {assessment.difficulty} "
+                         f"({assessment.difficulty_label.value}), length "
+                         f"{assessment.length.value}. {note}").strip())
+            acceptance_criteria = []
         return HandoffRequest(
             task=task,
             objective=f"Complete the bounded task: {task}",
             difficulty=difficulty if difficulty is not None else assessment.difficulty,
             length=length or assessment.length,
-            repository_context=RepositoryContext(
-                summary=(f"Routed to {model_alias}. Difficulty {assessment.difficulty} "
-                         f"({assessment.difficulty_label.value}), length "
-                         f"{assessment.length.value}. {note}").strip()),
+            repository_context=repository_context,
             constraints=[
                 "Do not modify files outside allowed scope",
                 "Do not add dependencies unless explicitly requested",
                 "Do not access secrets or credentials",
                 "Return a unified diff or structured patch",
             ],
-            acceptance_criteria=[
+            acceptance_criteria=acceptance_criteria or [
                 "Requested behavior is implemented",
                 "Existing tests still pass",
             ],
         )
 
-    def _partial_subrequests(self, assessment, task_description, profile, model_alias):
+    def _partial_subrequests(self, assessment, task_description, profile, model_alias,
+                             packaged=None):
         sub_difficulty = min(assessment.difficulty, 3)
         subrequests = []
         for focus, _ in _PARTIAL_SUBTASKS:
@@ -310,6 +357,7 @@ class PolicyRouter(Router):
                     length=LengthLevel.SHORT,
                     difficulty=sub_difficulty,
                     note=f"Bounded subtask ({focus}) of a larger task.",
+                    packaged=packaged,
                 )
             )
         return subrequests
