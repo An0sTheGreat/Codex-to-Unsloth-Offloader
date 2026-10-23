@@ -1,0 +1,280 @@
+"""Routing layer for the Unsloth offloader.
+
+Routing decides, for a classified task, whether and how to offload it to the
+local model. It is intentionally a thin interface in Phase 1: the *classification*
+(:class:`TaskAssessment`) and the *routing policy* are separate implementations
+added in Phase 3 (classifier) and Phase 4 (routing policy). This module defines
+the contract both must satisfy, so they can be swapped, tested, and mocked
+independently.
+
+The router takes a :class:`TaskAssessment` and produces a :class:`RoutingDecision`:
+
+* ``full_local``  -> one :class:`HandoffRequest` covering the whole task;
+* ``partial_local`` -> one :class:`HandoffRequest` per bounded subtask;
+* ``keep_in_codex`` -> no handoff; Codex executes it itself.
+
+The router must never make the offload decision silently: every decision carries a
+``reason`` that is surfaced in the Coding Task Assessment footer.
+"""
+
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from typing import Optional
+
+from .classifier import TaskClassifier
+from .config import OffloaderConfig
+from .schemas import (
+    HandoffRequest,
+    LengthLevel,
+    RepositoryContext,
+    RoutingDecision,
+    RoutingDecisionKind,
+    TaskAssessment,
+)
+
+
+class Router(ABC):
+    """Abstract task classifier + router.
+
+    Implementations keep the two concerns separate: :meth:`assess` classifies a
+task (Phase 3), :meth:`route` turns an assessment into a decision (Phase 4).
+    Splitting them lets Codex call ``route`` with a *user-provided* assessment
+    (e.g. from the footer) without re-running the classifier.
+    """
+
+    @abstractmethod
+    def assess(self, task_description: str, *, context: Optional[dict] = None) -> TaskAssessment:
+        """Classify a coding task into a :class:`TaskAssessment`. (Phase 3.)
+
+        :param task_description: The user's coding request (or the relevant excerpt).
+        :param context: Optional structured context (repo summary, files, etc.).
+        :return: A validated :class:`TaskAssessment`.
+        """
+
+    @abstractmethod
+    def route(self, assessment: TaskAssessment, *, config=None) -> RoutingDecision:
+        """Turn an assessment into a :class:`RoutingDecision`. (Phase 4.)
+
+        :param assessment: The :class:`TaskAssessment` to route.
+        :param config: Optional :class:`OffloaderConfig`; used to read routing
+        thresholds (max difficulty / length for offload, model alias).
+        :return:
+            * :class:`RoutingDecision` with ``kind=full_local`` and one
+              ``subrequests`` entry (the whole task) for small, safe tasks;
+            * ``kind=partial_local`` with multiple ``subrequests`` (bounded
+              subtasks) for medium tasks; or
+            * ``kind=keep_in_codex`` with no subrequests for large / high-risk
+              work.
+        """
+
+    # -- convenience --
+
+    def plan(self, task_description: str, *, context: Optional[dict] = None, config=None) -> RoutingDecision:
+        """Assess then route, in one call (for the Codex orchestration path)."""
+        assessment = self.assess(task_description, context=context)
+        decision = self.route(assessment, config=config)
+        decision.assessment = assessment
+        return decision
+
+
+# ---------------------------------------------------------------------------
+# Concrete routing policy (Phase 4)
+# ---------------------------------------------------------------------------
+
+# str-enum comparison is lexicographic, not ordinal, so length comparisons use
+# an explicit ordinal map.
+_LENGTH_ORDINAL = {
+    LengthLevel.SHORT: 0,
+    LengthLevel.MEDIUM: 1,
+    LengthLevel.LONG: 2,
+    LengthLevel.EXTENDED: 3,
+}
+
+# Bounded subtasks emitted for PARTIAL_LOCAL (handoff.md section 4: repetitive
+# implementation, tests/docs, and boilerplate are delegated independently).
+_PARTIAL_SUBTASKS = (
+    ("implementation", "Implement the bounded implementation portion of the task."),
+    ("tests", "Add or extend unit tests that prove the implementation."),
+    ("docs", "Update code comments and docs for the changed code."),
+)
+
+
+class PolicyRouter(Router):
+    """Phase 4 routing policy.
+
+    Consumes the Phase 3 :class:`TaskClassifier` assessment and the
+    :class:`~bridge.config.OffloaderConfig` model profile to produce a
+    :class:`RoutingDecision`. Checks run in conservative order:
+
+    1. Model availability — a *detected* model must match
+       ``config.local_model_match`` (unknown capability degrades to Codex);
+       when nothing is detectable, the configured profile is trusted.
+    2. ``config.auto_handoff_enabled`` must be True.
+    3. Validation failures for the same task must be below
+       ``config.max_validation_failures``.
+    4. Packaged context must fit ``config.context_budget_tokens``.
+    5. High-risk flags force Keep in Codex.
+    6. Difficulty must lie in the profile's ``use_for_difficulty`` and at or
+       below ``config.max_difficulty_full_handoff``.
+    7. Scope within ``profile.max_default_length`` -> full local handoff;
+       otherwise partial handoff of bounded subtasks.
+    """
+
+    def __init__(self, classifier: Optional[TaskClassifier] = None):
+        self.classifier = classifier or TaskClassifier()
+
+    def assess(self, task_description: str, *, context: Optional[dict] = None) -> TaskAssessment:
+        """Classify a task (delegates to :class:`TaskClassifier`, Phase 3)."""
+        return self.classifier.assess(task_description, context=context)
+
+    def route(self, assessment: TaskAssessment, *, config=None, loaded_model=None,
+              validation_failures: int = 0, context_tokens: Optional[int] = None,
+              task_description: Optional[str] = None) -> RoutingDecision:
+        """Turn an assessment into a :class:`RoutingDecision` (Phase 4).
+
+        :param assessment: The :class:`TaskAssessment` to route.
+        :param config: Optional :class:`~bridge.config.OffloaderConfig`.
+        :param loaded_model: Optional :class:`~bridge.schemas.ModelMetadata` from
+            transport discovery; when present, the model must match the profile
+            (unknown capability -> keep in Codex). When None, the configured
+            profile is used.
+        :param validation_failures: How many times this task failed Codex
+            validation so far.
+        :param context_tokens: Estimated token size of the packaged context.
+        :param task_description: Original task text, used to phrase subrequests.
+        :return: A :class:`RoutingDecision` for FULL_LOCAL, PARTIAL_LOCAL, or
+            KEEP_IN_CODEX, with a concise ``reason`` and ``dry_run`` flag.
+        """
+        config = config or OffloaderConfig()
+        profile = config.model_profile
+        available, model_alias, model_note = self._model_available(loaded_model, config)
+
+        if not available:
+            return self._keep(model_alias, model_note, config)
+        if not config.auto_handoff_enabled:
+            return self._keep(model_alias,
+                              "automatic handoff disabled (auto_handoff_enabled=false)",
+                              config)
+        if validation_failures >= config.max_validation_failures:
+            return self._keep(model_alias,
+                              f"validation failed {validation_failures}x for this task "
+                              f"(limit {config.max_validation_failures}); keep in Codex",
+                              config)
+        if context_tokens is not None and context_tokens > config.context_budget_tokens:
+            return self._keep(model_alias,
+                              f"packaged context ~{context_tokens} tokens exceeds "
+                              f"budget {config.context_budget_tokens} tokens; keep in Codex",
+                              config)
+        if assessment.is_high_risk:
+            flags = ", ".join(f.value for f in assessment.risk_flags)
+            return self._keep(model_alias, f"high-risk flags ({flags}); keep in Codex", config)
+        if (assessment.difficulty not in profile.use_for_difficulty
+                or assessment.difficulty > config.max_difficulty_full_handoff):
+            return self._keep(model_alias,
+                              f"difficulty {assessment.difficulty} not eligible "
+                              f"(profile use_for_difficulty={profile.use_for_difficulty}, "
+                              f"max_difficulty_full_handoff={config.max_difficulty_full_handoff}); "
+                              f"keep in Codex",
+                              config)
+
+        if _LENGTH_ORDINAL[assessment.length] <= _LENGTH_ORDINAL[profile.max_default_length]:
+            reason = (f"difficulty {assessment.difficulty} eligible "
+                      f"(use_for_difficulty={profile.use_for_difficulty}), "
+                      f"{assessment.length.value} scope within max "
+                      f"{profile.max_default_length.value}; {model_note}")
+            return RoutingDecision(
+                kind=RoutingDecisionKind.FULL_LOCAL,
+                model_alias=model_alias,
+                reason=reason,
+                subrequests=[self._build_request(assessment, task_description, model_alias,
+                                                 profile=profile)],
+                dry_run=config.dry_run,
+            )
+
+        reason = (f"{assessment.length.value} scope exceeds profile max "
+                  f"{profile.max_default_length.value}; partial handoff of bounded "
+                  f"subtasks; {model_note}")
+        return RoutingDecision(
+            kind=RoutingDecisionKind.PARTIAL_LOCAL,
+            model_alias=model_alias,
+            reason=reason,
+            subrequests=self._partial_subrequests(assessment, task_description, profile, model_alias),
+            dry_run=config.dry_run,
+        )
+
+    def plan(self, task_description: str, *, context: Optional[dict] = None, config=None,
+             loaded_model=None, validation_failures: int = 0,
+             context_tokens: Optional[int] = None) -> RoutingDecision:
+        """Assess then route, in one call (for the Codex orchestration path)."""
+        assessment = self.assess(task_description, context=context)
+        decision = self.route(assessment, config=config, loaded_model=loaded_model,
+                              validation_failures=validation_failures,
+                              context_tokens=context_tokens,
+                              task_description=task_description)
+        decision.assessment = assessment
+        return decision
+
+    # -- helpers --
+
+    def _model_available(self, loaded_model, config):
+        """Return (available, model_alias, model_note).
+
+        Unknown or mismatched capability degrades conservatively (keep in
+        Codex). A detected matching model uses the *actual* loaded name as the
+        alias; an undetected model falls back to the configured profile.
+        """
+        if loaded_model is None:
+            return True, config.model_profile.name, "model not detected; using configured profile"
+        if not loaded_model.loaded:
+            return False, "", "no model loaded in Unsloth"
+        match = config.local_model_match
+        haystack = f"{loaded_model.id} {loaded_model.display_name}".lower()
+        if match and match.lower() not in haystack:
+            return False, "", (f"loaded model {loaded_model.display_name!r} does not match "
+                               f"configured profile (local_model_match={match!r}); "
+                               f"capability unknown - conservative fallback")
+        return True, loaded_model.display_name, f"loaded model {loaded_model.display_name!r} matches profile"
+
+    def _keep(self, model_alias, reason, config):
+        return RoutingDecision(kind=RoutingDecisionKind.KEEP_IN_CODEX, model_alias=model_alias,
+                               reason=reason, subrequests=[], dry_run=config.dry_run)
+
+    def _build_request(self, assessment, task_description, model_alias, *, profile,
+                       length=None, difficulty=None, note=""):
+        task = (task_description or assessment.reason).strip()
+        return HandoffRequest(
+            task=task,
+            objective=f"Complete the bounded task: {task}",
+            difficulty=difficulty if difficulty is not None else assessment.difficulty,
+            length=length or assessment.length,
+            repository_context=RepositoryContext(
+                summary=(f"Routed to {model_alias}. Difficulty {assessment.difficulty} "
+                         f"({assessment.difficulty_label.value}), length "
+                         f"{assessment.length.value}. {note}").strip()),
+            constraints=[
+                "Do not modify files outside allowed scope",
+                "Do not add dependencies unless explicitly requested",
+                "Do not access secrets or credentials",
+                "Return a unified diff or structured patch",
+            ],
+            acceptance_criteria=[
+                "Requested behavior is implemented",
+                "Existing tests still pass",
+            ],
+        )
+
+    def _partial_subrequests(self, assessment, task_description, profile, model_alias):
+        sub_difficulty = min(assessment.difficulty, 3)
+        return [
+            self._build_request(
+                assessment,
+                f"{task_description} - {focus}" if task_description else focus,
+                model_alias, profile=profile,
+                length=LengthLevel.SHORT, difficulty=sub_difficulty,
+                note=f"Bounded subtask ({focus}) of a larger task."),
+            for focus, _ in _PARTIAL_SUBTASKS
+        ]
+
+
+__all__ = ["Router", "PolicyRouter"]

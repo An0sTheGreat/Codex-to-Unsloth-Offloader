@@ -1,0 +1,183 @@
+                                                                               
+ Usage: unsloth studio [OPTIONS] COMMAND [ARGS]...                             
+                                                                               
+ Unsloth Studio commands.                                                      
+                                                                               
+┌─ Options ───────────────────────────────────────────────────────────────────┐
+│ --port            -p                     <int>             [default: 8888]  │
+│ --host            -H                     <str>             [default:        │
+│                                                            127.0.0.1]       │
+│ --frontend        -f                     <path>                             │
+│ --silent          -q                                                        │
+│ --api-only                                                 Run API server   │
+│                                                            only, no         │
+│                                                            frontend serving │
+│                                                            (for Tauri       │
+│                                                            desktop app)     │
+│ --parallel,--n-…                         <int range>       llama-server     │
+│                                          [1<=x<=64]        parallel decode  │
+│                                                            slots (1..64).   │
+│                                                            Default 4. The   │
+│                                                            Unsloth run      │
+│                                                            settings         │
+│                                                            (Parallel Slots) │
+│                                                            override it per  │
+│                                                            load.            │
+│                                                            [default: 4]     │
+│ --cloudflare          --no-cloudflare                      Expose Unsloth   │
+│                                                            on a PUBLIC      │
+│                                                            internet URL via │
+│                                                            a free           │
+│                                                            Cloudflare HTTPS │
+│                                                            tunnel, for      │
+│                                                            non-api-only     │
+│                                                            wildcard binds   │
+│                                                            (0.0.0.0 or ::). │
+│                                                            Off by default;  │
+│                                                            pass             │
+│                                                            --cloudflare to  │
+│                                                            enable it        │
+│                                                            (--secure        │
+│                                                            implies it).     │
+│                                                            --no-cloudflare  │
+│                                                            forces it off    │
+│                                                            but does not     │
+│                                                            change a raw     │
+│                                                            wildcard bind.   │
+│ --secure              --no-secure                          Expose ONLY a    │
+│                                                            Cloudflare HTTPS │
+│                                                            link: bind       │
+│                                                            localhost and    │
+│                                                            fail closed if   │
+│                                                            the tunnel can't │
+│                                                            start. Without   │
+│                                                            it, --no-secure  │
+│                                                            also serves the  │
+│                                                            raw 0.0.0.0      │
+│                                                            port, which is   │
+│                                                            reachable from   │
+│                                                            anywhere on the  │
+│                                                            network.         │
+│                                                            [default:        │
+│                                                            no-secure]       │
+│ --verbose         -v                                       Log every API    │
+│                                                            request,         │
+│                                                            including the    │
+│                                                            high-frequency   │
+│                                                            polling that is  │
+│                                                            deduplicated by  │
+│                                                            default.         │
+│ --enable-tools        --disable-tools                      Force            │
+│                                                            server-side      │
+│                                                            tools (web       │
+│                                                            search, code     │
+│                                                            execution) on or │
+│                                                            off for every    │
+│                                                            request.         │
+│                                                            Default: no      │
+│                                                            server-wide      │
+│                                                            policy, so the   │
+│                                                            per-chat UI      │
+│                                                            toggle (the      │
+│                                                            request's own    │
+│                                                            enable_tools)    │
+│                                                            decides;         │
+│                                                            `unsloth studio  │
+│                                                            run` is the      │
+│                                                            launcher that    │
+│                                                            defaults them    │
+│                                                            on. /v1/messages │
+│                                                            takes the on     │
+│                                                            direction per    │
+│                                                            request          │
+│                                                            (enable_tools)   │
+│                                                            because it has   │
+│                                                            no confirmation  │
+│                                                            channel; the off │
+│                                                            direction still  │
+│                                                            applies          │
+│                                                            everywhere.      │
+│ --disable-dns-p…                                           Send the         │
+│                                                            hostname (not    │
+│                                                            the validated    │
+│                                                            IP) in web       │
+│                                                            fetches that go  │
+│                                                            through an       │
+│                                                            explicitly       │
+│                                                            configured       │
+│                                                            HTTP(S)_PROXY,   │
+│                                                            so the proxy can │
+│                                                            apply hostname   │
+│                                                            policy and TLS   │
+│                                                            interception.    │
+│                                                            Direct fetches   │
+│                                                            stay pinned to   │
+│                                                            the validated    │
+│                                                            IP.              │
+│ --password                               <str>             Set the INITIAL  │
+│                                                            admin password   │
+│                                                            non-interactive… │
+│                                                            (headless        │
+│                                                            setups), only    │
+│                                                            when none is set │
+│                                                            yet. Also reads  │
+│                                                            the              │
+│                                                            UNSLOTH_STUDIO_… │
+│                                                            env var, or      │
+│                                                            `--password -`   │
+│                                                            to read one line │
+│                                                            from stdin. A    │
+│                                                            literal value is │
+│                                                            visible in the   │
+│                                                            process list and │
+│                                                            shell history.   │
+│                                                            Rotate later     │
+│                                                            with `unsloth    │
+│                                                            studio           │
+│                                                            reset-password`. │
+│ --ssl-certfile                           <path>            Serve HTTPS with │
+│                                                            this certificate │
+│                                                            (PEM, full       │
+│                                                            chain), e.g. a   │
+│                                                            Tailscale or     │
+│                                                            Let's Encrypt    │
+│                                                            .crt. Needs      │
+│                                                            --ssl-keyfile.   │
+│                                                            Not combinable   │
+│                                                            with --secure /  │
+│                                                            --cloudflare.    │
+│ --ssl-keyfile                            <path>            Private key      │
+│                                                            (PEM) for        │
+│                                                            --ssl-certfile.  │
+│ --models-dir                             <path>            Add a folder of  │
+│                                                            local models to  │
+│                                                            Studio           │
+│                                                            (repeatable). It │
+│                                                            is saved as a    │
+│                                                            Custom Folder,   │
+│                                                            so its models    │
+│                                                            show up in the   │
+│                                                            Chat and Train   │
+│                                                            model pickers on │
+│                                                            this and later   │
+│                                                            launches; remove │
+│                                                            it from Custom   │
+│                                                            Folders in the   │
+│                                                            model picker.    │
+│ --help            -h                                       Show this        │
+│                                                            message and      │
+│                                                            exit.            │
+└─────────────────────────────────────────────────────────────────────────────┘
+┌─ Commands ──────────────────────────────────────────────────────────────────┐
+│ run             Start Unsloth, load a model, print an API key -- one-liner  │
+│                 server.                                                     │
+│ stop            Stop every running Unsloth Studio server for this           │
+│                 STUDIO_HOME.                                                │
+│ update          Update Unsloth Studio dependencies and rebuild.             │
+│ verify-install  Check that the Unsloth Studio dependency install completed. │
+│ reset-password  Reset an Unsloth account password. Rotates in place, so     │
+│                 nothing needs restarting. Shared /p                         │
+│                 preview links are not revoked; rotate those in Settings if  │
+│                 the old password leaked.                                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+
