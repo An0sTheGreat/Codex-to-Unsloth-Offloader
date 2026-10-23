@@ -303,7 +303,7 @@ Prompt bodies and source snippets should be excluded from persistent logs by def
   - **Files modified:** `bridge/transport.py` (endpoint order in `send()`), `tests/test_transport.py` (updated the order-dependent fallback test + added chat-completions response-shape test).
   - **Test changes:** `test_send_falls_back_to_chat` renamed to `test_send_falls_back_to_responses` (chat/completions tried first, responses fallback); added `test_send_completed_chat_completions_shape` (primary path extracts + validates a chat-shaped body). The 4 earlier JSON-output tests and all existing transport tests unchanged and still pass.
   - **Validation (verified):** full suite `python -m unittest discover -s tests -p test_*.py` → **90 tests, all OK**. **Live `--smoke` PASSED** (user shell run, 2026-10-21): `worker_result.state == completed`, non-empty summary, model `0. GOAT - Ternary Bonsai 2 27B｜PTQ1_0` loaded, exit code 0, ~15–20s (no more 6-min hang).
-  - **Known issues / blockers:** none in the code. Cancellation is timeout-bounded only (acceptable for bounded tasks). Leftover diagnostic probes `probe_smoke.py` / `probe_fallback.py` in project root are optional to delete.
+  - **Known issues / blockers:** none in the code. Cancellation is timeout-bounded only (acceptable for bounded tasks). Leftover diagnostic probes `probe_smoke.py` / `probe_fallback.py` were deleted (no longer present in the project root).
   - **Success criteria (task):** all met — unit tests verified (valid JSON → `completed`; malformed/non-JSON → `invalid_output`; validation stays strict) and live `state: completed` confirmed.
 
 - **Phase 3 — Coding Task Classifier (2026-10-22): COMPLETE.**

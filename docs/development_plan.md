@@ -112,6 +112,8 @@ Create the minimal code structure and machine-readable contracts without impleme
 
 Contracts must be stable enough to support transport implementation.
 
+> **Status: PASSED (2026-10-21).** `bridge/` package implemented with validated contracts (`bridge/schemas.py`), path-independent config (`bridge/config.py` + `bridge/config.json`), structured errors (`bridge/errors.py`), and transport/routing interfaces (`bridge/transport.py`, `bridge/routing.py`); 60 unittest tests pass with no live Unsloth. See the completion log in `handoff.md`.
+
 ---
 
 # Phase 2 — Unsloth Transport Adapter
@@ -144,6 +146,8 @@ Implement reliable communication with the selected supported Unsloth interface.
 - A loaded local model can receive a simple bounded prompt in the live smoke test.
 - Malformed responses are detected.
 - No secret values are logged.
+
+> **Status: PASSED (2026-10-21).** `UnslothApiTransport` implemented: capability check, loaded-model discovery via `GET /v1/models`, request submission via `POST /v1/chat/completions` (primary) with `/v1/responses` fallback, explicit timeout, bounded retry, and normalization to all 5 `ResultState` values; `bridge/offload.py` CLI added. 90 unittest tests pass; live `--smoke` round-trip PASSED (`worker_result.state == completed`, exit 0). See the completion log in `handoff.md`.
 
 ---
 
@@ -202,6 +206,8 @@ Map eligible tasks to the local model profile or keep them in Codex.
 - Hard/expert/high-risk tasks remain in Codex by default.
 - Unknown model capability degrades conservatively.
 
+> **Status: PASSED (2026-10-22).** `PolicyRouter` implemented in `bridge/routing.py`: configurable `ModelProfile` (Ternary Bonsai 2 27B PTQ1_0, difficulty 1-3, full handoff up to `Medium`), detected-model matching, routing outputs (`FULL_LOCAL` / `PARTIAL_LOCAL` / `KEEP_IN_CODEX`), and rules for model availability, `auto_handoff_enabled`, validation failures, context budget, `is_high_risk`, and difficulty eligibility; concise log-safe `RoutingDecision.explain()`. 22 policy tests added; full suite 146/146 pass. See the completion log in `handoff.md`.
+
 ---
 
 # Phase 5 — Context Packager and Secret Guard
@@ -230,6 +236,8 @@ Send only the minimum context required for the delegated task.
 - Unrelated repository files are not included by default.
 - Context overflow is handled before model invocation.
 - All paths in packets are relative/project-scoped.
+
+> **Status: PASSED (2026-10-22).** `ContextPackager` implemented in `bridge/context.py`: allowlisted context collection, excluded-file/glob denylist (blocks secret/credential files), inline secret redaction, and `context_budget_tokens` enforcement. `PolicyRouter.route()`/`plan()` now accept optional `scope` + `project_root`, run the packager before the budget check, and return `KEEP_IN_CODEX` on `needs_scope_reduction` or budget overflow; packaged context + acceptance criteria are threaded into each subrequest. 25 tests added; full suite 171/171 pass. See the completion log in `handoff.md`.
 
 ---
 
