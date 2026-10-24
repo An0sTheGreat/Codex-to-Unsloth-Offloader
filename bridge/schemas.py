@@ -371,3 +371,80 @@ class RoutingDecision(BaseModel):
         if self.dry_run:
             parts.append("dry-run")
         return " | ".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Phase 9 orchestration result
+# ---------------------------------------------------------------------------
+
+class FailureKind(str, Enum):
+    "Why a subtask did not (or did) produce an accepted patch."
+    NONE = "none"
+    WORKER = "worker_state"
+    SCOPE = "scope_violation"
+    VERIFICATION = "verification"
+    TRANSPORT = "transport"
+
+
+class SubtaskOutcome(BaseModel):
+    "Outcome of processing one subrequest (send -> parse -> validate -> verify)."
+    "accepted is True only when the patch passed the Phase 7 scope gate AND"
+    "Phase 8 independent verification (ACCEPTED_UNCHANGED)."
+    request_id: str
+    task: str
+    attempts: int = Field(default=0, ge=0,
+                          description="Bounded attempts made (needs-context retries included).")
+    worker_result: Optional[WorkerResult] = Field(
+        default=None,
+        description="The worker's final normalized result; None when the "
+                    "transport failed before any result.")
+    failure_kind: FailureKind = Field(default=FailureKind.NONE)
+    validation: Optional[PatchValidationResult] = None
+    verification: Optional[ValidationOutcome] = None
+    accepted: bool = Field(default=False,
+                           description="True only when scope-valid AND independently "
+                                       "verified (ACCEPTED_UNCHANGED).")
+    notes: str = Field(default="", description="Human-readable notes for the final attempt.")
+
+
+class FinalState(str, Enum):
+    "End-to-end disposition of a Phase 9 orchestration run."
+    COMPLETED = "completed"
+    PARTIAL = "partial_handoff"
+    KEEP_IN_CODEX = "keep_in_codex"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class OrchestrationResult(BaseModel):
+    "End-to-end record of a Phase 9 orchestration run."
+    "Carries the routing decision, the per-subtask outcomes, the final"
+    "disposition, and the four-line Coding Task Assessment data (the"
+    "assessment field is rendered as the markdown block by the Phase 10 footer)."
+    task_description: str
+    assessment: TaskAssessment
+    routing: RoutingDecision
+    subtask_outcomes: list[SubtaskOutcome] = Field(default_factory=list)
+    final_state: FinalState
+    notes: list[str] = Field(default_factory=list)
+
+    @property
+    def is_success(self) -> bool:
+        "True when the offload produced a verified result (full or partial)."
+        return self.final_state in (FinalState.COMPLETED, FinalState.PARTIAL)
+
+    @property
+    def coding_task_assessment(self) -> dict:
+        "The four-line Coding Task Assessment data (handoff.md section 4)."
+        a = self.assessment
+        return {
+            "difficulty": a.difficulty,
+            "difficulty_label": a.difficulty_label.value,
+            "length": a.length.value,
+            "length_note": a.length_note,
+            "smaller_llm_offload": a.offload.value,
+            "offload_note": a.offload_note,
+            "execution": a.execution.value,
+            "risk_flags": [f.value for f in a.risk_flags],
+            "reason": a.reason,
+        }

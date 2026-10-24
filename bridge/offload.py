@@ -10,6 +10,8 @@ gate runs.
 
 Usage:
     python -m bridge.offload <task-packet-json-or-file>
+    python -m bridge.offload --task "Add a helper" [--scope scope.json]
+    python -m bridge.offload --task "Add a helper" --dry-run
     python -m bridge.offload --smoke
 
 The task packet is a JSON document (inline string or file) matching the
@@ -26,6 +28,7 @@ Exit codes:
     2  invalid task packet (bad JSON / schema mismatch) or usage error
     3  Unsloth error (server down, auth rejected, timeout, malformed response)
     4  patch failed the scope validation gate (reject / escalate to Codex)
+    5  task kept in Codex (ineligible, or Unsloth unavailable)
 """
 from __future__ import annotations
 
@@ -38,6 +41,7 @@ from .config import load_config
 from .diagnostics import configure_logging, log_handoff
 from .errors import UnslothError
 from .schemas import (
+    FinalState,
     HandoffRequest,
     LengthLevel,
     ResultState,
@@ -47,12 +51,14 @@ from .schemas import (
 from .transport import UnslothApiTransport
 from .validate import PatchValidator
 from .verification import verify
+from .orchestrator import Orchestrator, send_with_context_retry
 
 EXIT_COMPLETED = 0
 EXIT_WORKER_STATE = 1
 EXIT_INVALID_PACKET = 2
 EXIT_UNSLOTH = 3
 EXIT_VALIDATION_FAILED = 4
+EXIT_KEEP_IN_CODEX = 5
 
 
 def _smoke_request() -> HandoffRequest:
@@ -95,20 +101,8 @@ def run_handoff(transport, raw_packet: str, *, max_context_retries: int = 1) -> 
     Returns an exit code.
     """
     request = HandoffRequest.model_validate(json.loads(raw_packet))
-    result = transport.send(request)
-
-    # Bounded needs-context retry: add only the requested context (section 10).
-    for _ in range(max_context_retries):
-        if result.state is ResultState.COMPLETED:
-            break
-        if result.state is not ResultState.NEEDS_CONTEXT \
-                or not result.context_needed.strip():
-            break
-        request.repository_context.summary = (
-            request.repository_context.summary + "\n"
-            + "Worker requested missing context: " + result.context_needed
-        )
-        result = transport.send(request)
+    # Bounded needs-context retry (section 10): add only the requested context.
+    result = send_with_context_retry(transport, request, max_context_retries)
 
     payload = result.model_dump()
     validation = None
@@ -146,6 +140,29 @@ def run_smoke(transport) -> int:
     return EXIT_COMPLETED if result.state is ResultState.COMPLETED else EXIT_WORKER_STATE
 
 
+def _orchestration_exit(orchestrator, task, *, scope=None, project_root=None,
+                       dry_run=None) -> int:
+    """Run the Phase 9 orchestration for ``task`` and map the result to an
+    exit code.
+
+    COMPLETED / PARTIAL -> EXIT_COMPLETED
+    KEEP_IN_CODEX       -> EXIT_KEEP_IN_CODEX
+    FAILED              -> EXIT_VALIDATION_FAILED
+    CANCELLED           -> EXIT_WORKER_STATE
+    """
+    result = orchestrator.offload(
+        task, scope=scope, project_root=project_root, dry_run=dry_run)
+    code = {
+        FinalState.COMPLETED: EXIT_COMPLETED,
+        FinalState.PARTIAL: EXIT_COMPLETED,
+        FinalState.KEEP_IN_CODEX: EXIT_KEEP_IN_CODEX,
+        FinalState.FAILED: EXIT_VALIDATION_FAILED,
+        FinalState.CANCELLED: EXIT_WORKER_STATE,
+    }[result.final_state]
+    print(json.dumps(result.model_dump(mode="json"), indent=2))
+    return code
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="offload",
@@ -165,11 +182,35 @@ def main(argv=None) -> int:
               "API key env var. Prints the loaded model metadata and a trivial "
               "worker result."),
     )
+    parser.add_argument(
+        "--task",
+        help=("Free-text coding task description. Runs the full Phase 9 "
+              "orchestration: assess -> route -> send -> validate -> verify -> "
+              "fallback."),
+    )
+    parser.add_argument(
+        "--scope",
+        help=("Path to a JSON task-scope file for context packaging "
+              "(allowed_files, read_only_files, snippets, summary, "
+              "acceptance_criteria)."),
+    )
+    parser.add_argument(
+        "--project-root",
+        help="Project root for scope packaging.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show the routing decision and what would be offloaded, without "
+             "calling the local model.",
+    )
     args = parser.parse_args(argv)
     if args.smoke and args.packet is not None:
         parser.error("--smoke must not be combined with a task packet")
-    if not args.smoke and args.packet is None:
-        parser.error("a task packet (JSON string or file path) is required")
+    if args.smoke and args.task is not None:
+        parser.error("--smoke must not be combined with --task")
+    if not args.smoke and not args.task and args.packet is None:
+        parser.error("a task packet, --task, or --smoke is required")
 
     config = load_config()
     configure_logging(config.log_level)
@@ -177,6 +218,15 @@ def main(argv=None) -> int:
     try:
         if args.smoke:
             code = run_smoke(transport)
+        elif args.task is not None:
+            scope = None
+            if args.scope:
+                with open(args.scope, encoding="utf-8") as f:
+                    scope = json.loads(f.read())
+            code = _orchestration_exit(
+                Orchestrator(config, transport), args.task,
+                scope=scope, project_root=args.project_root,
+                dry_run=args.dry_run or None)
         else:
             raw = args.packet
             if os.path.isfile(raw):
