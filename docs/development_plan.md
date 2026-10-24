@@ -263,6 +263,8 @@ Make local model output predictable enough for safe automation.
 - Diff output can be parsed deterministically.
 - Malformed output does not reach the application stage unchecked.
 
+> **Status: PASSED (2026-10-23).** Bounded-worker prompt contract complete in `bridge/transport.py` (scope, JSON-only output, full `WorkerResult` schema, assumptions/uncertainties/tests_run) plus one correction retry for schema/format violations via `_submit()`/`send()`. 3 new tests in `tests/test_transport.py`; full suite 174/174 pass. See the completion log in `handoff.md`.
+
 ---
 
 # Phase 7 — Patch Scope Validation
