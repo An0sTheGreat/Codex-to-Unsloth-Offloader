@@ -1,9 +1,12 @@
-"""Command-line entry point for the Unsloth offloader (Phase 2).
+"""Command-line entry point for the Unsloth offloader.
 
-Sends a bounded coding task to the local Unsloth model and prints the
-normalized ``WorkerResult`` as JSON to stdout. The result's ``state`` field
-and machine-readable fields follow the handoff.md task packet and response-
-state contracts (sections 6 and 8).
+Sends a bounded coding task to the local Unsloth model, runs the patch scope
+validation gate (Phase 7), and prints the normalized ``WorkerResult`` (with a
+``validation`` key) as JSON to stdout. The result's ``state`` field and the
+machine-readable validation fields follow the handoff.md task packet and
+response-state contracts (sections 6 and 8). A ``needs_context`` result is
+retried once with the requested context (handoff.md section 10) before the
+gate runs.
 
 Usage:
     python -m bridge.offload <task-packet-json-or-file>
@@ -18,10 +21,11 @@ model via GET /v1/models, sends a trivial bounded prompt, and prints the
 model metadata and the worker result as one JSON object.
 
 Exit codes:
-    0  worker returned state 'completed' (or smoke check passed)
+    0  worker returned state 'completed' and the patch passed scope validation
     1  worker returned a non-completed state
     2  invalid task packet (bad JSON / schema mismatch) or usage error
     3  Unsloth error (server down, auth rejected, timeout, malformed response)
+    4  patch failed the scope validation gate (reject / escalate to Codex)
 """
 from __future__ import annotations
 
@@ -31,6 +35,7 @@ import os
 import sys
 
 from .config import load_config
+from .diagnostics import configure_logging, log_handoff
 from .errors import UnslothError
 from .schemas import (
     HandoffRequest,
@@ -39,12 +44,14 @@ from .schemas import (
     RepositoryContext,
 )
 from .transport import UnslothApiTransport
+from .validate import PatchValidator
 
 
 EXIT_COMPLETED = 0
 EXIT_WORKER_STATE = 1
 EXIT_INVALID_PACKET = 2
 EXIT_UNSLOTH = 3
+EXIT_VALIDATION_FAILED = 4
 
 
 def _smoke_request() -> HandoffRequest:
@@ -69,11 +76,40 @@ def _smoke_request() -> HandoffRequest:
     )
 
 
-def run_handoff(transport, raw_packet: str) -> int:
-    """Validate the packet, send it, print the result. Returns an exit code."""
+def run_handoff(transport, raw_packet: str, *, max_context_retries: int = 1) -> int:
+    """Validate the packet, send it, run the patch scope gate, print the result.
+
+    On a ``needs_context`` result the requested context is appended to the
+    request and the task is sent again, up to ``max_context_retries`` times
+    (handoff.md section 10); it never loops. Returns an exit code.
+    """
     request = HandoffRequest.model_validate(json.loads(raw_packet))
     result = transport.send(request)
-    print(json.dumps(result.model_dump(), indent=2))
+
+    # Bounded needs-context retry: add only the requested context (section 10).
+    for _ in range(max_context_retries):
+        if result.state is ResultState.COMPLETED:
+            break
+        if result.state is not ResultState.NEEDS_CONTEXT \
+                or not result.context_needed.strip():
+            break
+        request.repository_context.summary = (
+            request.repository_context.summary + "\n"
+            + "Worker requested missing context: " + result.context_needed
+        )
+        result = transport.send(request)
+
+    payload = result.model_dump()
+    validation = None
+    if result.state is ResultState.COMPLETED:
+        validation = PatchValidator().validate(result, request)
+        payload["validation"] = validation.model_dump()
+
+    print(json.dumps(payload, indent=2))
+    log_handoff(request, result, validation)
+
+    if validation is not None and not validation.valid:
+        return EXIT_VALIDATION_FAILED
     return EXIT_COMPLETED if result.state is ResultState.COMPLETED else EXIT_WORKER_STATE
 
 
@@ -114,6 +150,7 @@ def main(argv=None) -> int:
         parser.error("a task packet (JSON string or file path) is required")
 
     config = load_config()
+    configure_logging(config.log_level)
     transport = UnslothApiTransport(config)
     try:
         if args.smoke:

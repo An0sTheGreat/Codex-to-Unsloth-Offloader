@@ -281,6 +281,40 @@ class ValidationOutcome(BaseModel):
     applied: bool = Field(default=False, description="Whether the patch was applied to a working tree.")
     notes: str = Field(default="", description="Free-form validation notes.")
 
+class PatchValidationResult(BaseModel):
+    """Phase 7 patch scope validation result (bridge.validate).
+
+    ``valid`` is the single gate: True only when the patch is within the
+    allowed/read-only scope and carries no flagged change type. A False
+    result must be rejected (hard violations: traversal, unexpected or
+    read-only, binary, or unparseable changes) or escalated to Codex for
+    review (soft flags: dependency/config changes and deletions).
+    """
+    valid: bool = Field(default=False,
+                        description="Single gate: True only when the patch is within the allowed/read-only "
+                        "scope and carries no flagged change type.")
+    files_changed: list[str] = Field(default_factory=list,
+                                      description="Normalized changed paths.")
+    # -- hard violations (reject) --
+    unexpected_changes: list[str] = Field(default_factory=list,
+                                          description="Changed paths outside allowed_files/read_only_files.")
+    read_only_changes: list[str] = Field(default_factory=list,
+                                          description="Changed paths that are read_only_files.")
+    path_traversals: list[str] = Field(default_factory=list,
+                                        description="Paths containing '..' or absolute paths.")
+    binary_changes: list[str] = Field(default_factory=list,
+                                       description="Binary files in the patch.")
+    parse_error: Optional[str] = Field(default=None,
+                                        description="Set when the diff could not be parsed.")
+    # -- soft flags (Codex review; no auto-apply) --
+    dependency_changes: list[str] = Field(default_factory=list,
+                                          description="Dependency/lock file changes.")
+    config_changes: list[str] = Field(default_factory=list,
+                                       description="Configuration file changes.")
+    deletions: list[str] = Field(default_factory=list,
+                                  description="Deleted files.")
+    notes: str = Field(default="", description="Human-readable summary.")
+
 class OffloadResult(BaseModel):
     """End-to-end record: what was sent, what the worker returned, and how it validated."""
     request_id: str

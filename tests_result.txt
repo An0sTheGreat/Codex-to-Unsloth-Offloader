@@ -1,0 +1,60 @@
+.....................................Y:\Programs\Unsloth\studio\python\cpython-3.13-windows-x86_64-none\Lib\tempfile.py:942: ResourceWarning: Implicitly cleaning up <TemporaryDirectory 'Y:\\Programs\\Codex to Unsloth Offloader\\unsloth-tmp\\tmp4t75d5tm'>
+  _warnings.warn(warn_message, ResourceWarning)
+.Y:\Programs\Unsloth\studio\python\cpython-3.13-windows-x86_64-none\Lib\tempfile.py:942: ResourceWarning: Implicitly cleaning up <TemporaryDirectory 'Y:\\Programs\\Codex to Unsloth Offloader\\unsloth-tmp\\tmp1sf923j1'>
+  _warnings.warn(warn_message, ResourceWarning)
+.Y:\Programs\Unsloth\studio\python\cpython-3.13-windows-x86_64-none\Lib\tempfile.py:942: ResourceWarning: Implicitly cleaning up <TemporaryDirectory 'Y:\\Programs\\Codex to Unsloth Offloader\\unsloth-tmp\\tmpvgd2z1sd'>
+  _warnings.warn(warn_message, ResourceWarning)
+.Y:\Programs\Unsloth\studio\python\cpython-3.13-windows-x86_64-none\Lib\tempfile.py:942: ResourceWarning: Implicitly cleaning up <TemporaryDirectory 'Y:\\Programs\\Codex to Unsloth Offloader\\unsloth-tmp\\tmpxw_wnm0z'>
+  _warnings.warn(warn_message, ResourceWarning)
+.Y:\Programs\Unsloth\studio\python\cpython-3.13-windows-x86_64-none\Lib\tempfile.py:942: ResourceWarning: Implicitly cleaning up <TemporaryDirectory 'Y:\\Programs\\Codex to Unsloth Offloader\\unsloth-tmp\\tmpq9y6la2k'>
+  _warnings.warn(warn_message, ResourceWarning)
+.Y:\Programs\Unsloth\studio\python\cpython-3.13-windows-x86_64-none\Lib\tempfile.py:942: ResourceWarning: Implicitly cleaning up <TemporaryDirectory 'Y:\\Programs\\Codex to Unsloth Offloader\\unsloth-tmp\\tmpk0f4ozf0'>
+  _warnings.warn(warn_message, ResourceWarning)
+.Y:\Programs\Unsloth\studio\python\cpython-3.13-windows-x86_64-none\Lib\tempfile.py:942: ResourceWarning: Implicitly cleaning up <TemporaryDirectory 'Y:\\Programs\\Codex to Unsloth Offloader\\unsloth-tmp\\tmp26e1m1ig'>
+  _warnings.warn(warn_message, ResourceWarning)
+.Y:\Programs\Unsloth\studio\python\cpython-3.13-windows-x86_64-none\Lib\tempfile.py:942: ResourceWarning: Implicitly cleaning up <TemporaryDirectory 'Y:\\Programs\\Codex to Unsloth Offloader\\unsloth-tmp\\tmpaiw3eorf'>
+  _warnings.warn(warn_message, ResourceWarning)
+.Y:\Programs\Unsloth\studio\python\cpython-3.13-windows-x86_64-none\Lib\tempfile.py:942: ResourceWarning: Implicitly cleaning up <TemporaryDirectory 'Y:\\Programs\\Codex to Unsloth Offloader\\unsloth-tmp\\tmpsqb09ydo'>
+  _warnings.warn(warn_message, ResourceWarning)
+.Y:\Programs\Unsloth\studio\python\cpython-3.13-windows-x86_64-none\Lib\tempfile.py:942: ResourceWarning: Implicitly cleaning up <TemporaryDirectory 'Y:\\Programs\\Codex to Unsloth Offloader\\unsloth-tmp\\tmpv2zwyu3j'>
+  _warnings.warn(warn_message, ResourceWarning)
+.Y:\Programs\Unsloth\studio\python\cpython-3.13-windows-x86_64-none\Lib\tempfile.py:942: ResourceWarning: Implicitly cleaning up <TemporaryDirectory 'Y:\\Programs\\Codex to Unsloth Offloader\\unsloth-tmp\\tmp095bx073'>
+  _warnings.warn(warn_message, ResourceWarning)
+.Y:\Programs\Unsloth\studio\python\cpython-3.13-windows-x86_64-none\Lib\tempfile.py:942: ResourceWarning: Implicitly cleaning up <TemporaryDirectory 'Y:\\Programs\\Codex to Unsloth Offloader\\unsloth-tmp\\tmpg6gjcyr6'>
+  _warnings.warn(warn_message, ResourceWarning)
+.Y:\Programs\Unsloth\studio\python\cpython-3.13-windows-x86_64-none\Lib\tempfile.py:942: ResourceWarning: Implicitly cleaning up <TemporaryDirectory 'Y:\\Programs\\Codex to Unsloth Offloader\\unsloth-tmp\\tmp_tevp5cq'>
+  _warnings.warn(warn_message, ResourceWarning)
+.Y:\Programs\Unsloth\studio\python\cpython-3.13-windows-x86_64-none\Lib\tempfile.py:942: ResourceWarning: Implicitly cleaning up <TemporaryDirectory 'Y:\\Programs\\Codex to Unsloth Offloader\\unsloth-tmp\\tmplbnsi25d'>
+  _warnings.warn(warn_message, ResourceWarning)
+.Y:\Programs\Unsloth\studio\python\cpython-3.13-windows-x86_64-none\Lib\tempfile.py:942: ResourceWarning: Implicitly cleaning up <TemporaryDirectory 'Y:\\Programs\\Codex to Unsloth Offloader\\unsloth-tmp\\tmp519fp3hb'>
+  _warnings.warn(warn_message, ResourceWarning)
+.Y:\Programs\Unsloth\studio\python\cpython-3.13-windows-x86_64-none\Lib\tempfile.py:942: ResourceWarning: Implicitly cleaning up <TemporaryDirectory 'Y:\\Programs\\Codex to Unsloth Offloader\\unsloth-tmp\\tmph6ppoiv2'>
+  _warnings.warn(warn_message, ResourceWarning)
+.Y:\Programs\Unsloth\studio\python\cpython-3.13-windows-x86_64-none\Lib\tempfile.py:942: ResourceWarning: Implicitly cleaning up <TemporaryDirectory 'Y:\\Programs\\Codex to Unsloth Offloader\\unsloth-tmp\\tmp1ga09s3q'>
+  _warnings.warn(warn_message, ResourceWarning)
+.Y:\Programs\Unsloth\studio\python\cpython-3.13-windows-x86_64-none\Lib\tempfile.py:942: ResourceWarning: Implicitly cleaning up <TemporaryDirectory 'Y:\\Programs\\Codex to Unsloth Offloader\\unsloth-tmp\\tmp6ddi7ncv'>
+  _warnings.warn(warn_message, ResourceWarning)
+.Y:\Programs\Unsloth\studio\python\cpython-3.13-windows-x86_64-none\Lib\tempfile.py:942: ResourceWarning: Implicitly cleaning up <TemporaryDirectory 'Y:\\Programs\\Codex to Unsloth Offloader\\unsloth-tmp\\tmp56x2qxko'>
+  _warnings.warn(warn_message, ResourceWarning)
+.Y:\Programs\Unsloth\studio\python\cpython-3.13-windows-x86_64-none\Lib\tempfile.py:942: ResourceWarning: Implicitly cleaning up <TemporaryDirectory 'Y:\\Programs\\Codex to Unsloth Offloader\\unsloth-tmp\\tmpjyhvkp94'>
+  _warnings.warn(warn_message, ResourceWarning)
+.Y:\Programs\Unsloth\studio\python\cpython-3.13-windows-x86_64-none\Lib\tempfile.py:942: ResourceWarning: Implicitly cleaning up <TemporaryDirectory 'Y:\\Programs\\Codex to Unsloth Offloader\\unsloth-tmp\\tmpbf4lu_v4'>
+  _warnings.warn(warn_message, ResourceWarning)
+.Y:\Programs\Unsloth\studio\python\cpython-3.13-windows-x86_64-none\Lib\tempfile.py:942: ResourceWarning: Implicitly cleaning up <TemporaryDirectory 'Y:\\Programs\\Codex to Unsloth Offloader\\unsloth-tmp\\tmpb8vfxqx3'>
+  _warnings.warn(warn_message, ResourceWarning)
+.Y:\Programs\Unsloth\studio\python\cpython-3.13-windows-x86_64-none\Lib\tempfile.py:942: ResourceWarning: Implicitly cleaning up <TemporaryDirectory 'Y:\\Programs\\Codex to Unsloth Offloader\\unsloth-tmp\\tmpgvjabvwb'>
+  _warnings.warn(warn_message, ResourceWarning)
+.Y:\Programs\Unsloth\studio\python\cpython-3.13-windows-x86_64-none\Lib\tempfile.py:942: ResourceWarning: Implicitly cleaning up <TemporaryDirectory 'Y:\\Programs\\Codex to Unsloth Offloader\\unsloth-tmp\\tmpc9g29zq9'>
+  _warnings.warn(warn_message, ResourceWarning)
+.Y:\Programs\Unsloth\studio\python\cpython-3.13-windows-x86_64-none\Lib\tempfile.py:942: ResourceWarning: Implicitly cleaning up <TemporaryDirectory 'Y:\\Programs\\Codex to Unsloth Offloader\\unsloth-tmp\\tmpym7fx_9b'>
+  _warnings.warn(warn_message, ResourceWarning)
+.............usage: offload [-h] [--smoke] [packet]
+offload: error: a task packet (JSON string or file path) is required
+..usage: offload [-h] [--smoke] [packet]
+offload: error: --smoke must not be combined with a task packet
+.{"code": "model_not_loaded", "message": "mock server not running", "details": {}}
+.......................................................................................................................................
+----------------------------------------------------------------------
+Ran 212 tests in 0.213s
+
+OK

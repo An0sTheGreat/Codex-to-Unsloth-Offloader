@@ -28,6 +28,7 @@ from .schemas import (
     TaskAssessment,
     ValidationOutcome,
     ValidationOutcomeKind,
+    PatchValidationResult,
     BlockedFile,
     ContextPackage,
     PackageStatus,
@@ -50,6 +51,8 @@ from .classifier import TaskClassifier
 from .routing import Router, RoutingDecision, PolicyRouter
 from .transport import MockTransport, Transport, UnslothApiTransport
 from .context import ContextPackager, estimate_tokens
+from .validate import PatchValidator
+from .diagnostics import configure_logging, log_handoff
 
 __version__ = "0.1.0"
 
@@ -98,6 +101,12 @@ __all__ = [
     "PolicyRouter",
     "RiskFlag",
     "TaskClassifier",
+    # patch scope validation
+    "PatchValidationResult",
+    "PatchValidator",
+    # diagnostics
+    "configure_logging",
+    "log_handoff",
     # transport
     "MockTransport",
     "Transport",

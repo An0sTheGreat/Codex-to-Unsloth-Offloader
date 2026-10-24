@@ -275,6 +275,14 @@ Do not log prompt bodies or source snippets by default, unless explicitly enable
   - Key: correction retry is a semantic re-prompt, distinct from transport-level bounded retry in `_send_with_retry`. A self-reported `state=invalid_output` on first try is respected (no retry).
   - Validation: 174 tests pass.
 
+- **Phase 7 — Patch Scope Validation (2026-10-23): DONE.**
+  - `bridge/validate.py` (`PatchValidator`) parses a returned unified diff and validates it against `repository_context.allowed_files`/`read_only_files`: allowlisted-scope check + detection of dependency/lock, config, binary, deletion, and path-traversal changes; returns `PatchValidationResult` (added to `bridge/schemas.py`) whose `valid` gate is the single decision (hard violations reject; dependency/config/deletion escalate to Codex).
+  - Wired the gate into the offload flow (`bridge/offload.py`, `run_handoff`): on a `completed` result it runs before acceptance and a failed patch returns new `EXIT_VALIDATION_FAILED` (4) with a `validation` key in the JSON output, never reported as success. A `needs_context` result retries once with the requested context appended (bounded, handoff.md section 10).
+  - `bridge/diagnostics.py` (`log_handoff`/`configure_logging`) — structured, log-safe handoff diagnostics emitting the handoff.md section 12 template at the configured log level; prompt bodies, source snippets, and secrets are never logged.
+  - Files: `bridge/offload.py`, `bridge/diagnostics.py` (new), `bridge/__init__.py`, `tests/test_offload.py`, `tests/test_diagnostics.py` (new), `docs/development_plan.md`, `docs/readme.md`.
+  - Validation: 212 tests pass.
+  - Note: Phase 8 (Codex Validation Workflow) is partially done (retry/fallback + diagnostics); applying patches to a working tree, running tests/lint, and recording accepted/edited/rejected outcomes remain.
+
 ## Live smoke command (user shell)
 ```powershell
 cd "Y:\Programs\Codex to Unsloth Offloader"
@@ -301,4 +309,4 @@ python -m bridge.offload --smoke
 ```
 
 ## Next work
-Phase 7 — Patch Scope Validation: parse returned diffs, verify every changed path is allowlisted, detect new dependencies / config / binary changes and path traversal, reject or escalate unexpected changes. Add tests for malicious/malformed patches.
+Phase 8 — Codex Validation Workflow: apply candidate patches to a reviewable working tree, run targeted tests/lint/type checks, and record the accepted/edited/rejected outcome. Then Phase 9 — Automatic Handoff Orchestration (assess -> route -> package -> send -> parse -> validate -> fallback, emitting the Coding Task Assessment footer).

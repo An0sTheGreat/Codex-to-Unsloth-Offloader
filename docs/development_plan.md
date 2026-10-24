@@ -292,9 +292,7 @@ Prevent delegated output from modifying unexpected files or violating request bo
 - Path traversal attempts are rejected.
 - Unexpected dependency changes require Codex review rather than automatic application.
 
----
-
-# Phase 8 — Codex Validation Workflow
+> **Status: PASSED (2026-10-23).** `bridge/validate.py` (`PatchValidator`) parses a returned unified diff and validates it against `repository_context.allowed_files`/`read_only_files`: an allowlisted-scope check plus detection of dependency/lock, config, binary, deletion, and path-traversal changes, returning a `PatchValidationResult` whose `valid` gate is the single decision (hard violations reject; dependency/config/deletion flags escalate to Codex review). It is wired into the offload flow in `bridge/offload.py` (`run_handoff`): on a `completed` result the gate runs before acceptance and a failed patch returns `EXIT_VALIDATION_FAILED` (4) with a `validation` key in the JSON output; a `needs_context` result retries once with the requested context appended (bounded, handoff.md section 10). `PatchValidationResult`/`PatchValidator` exported from `bridge/__init__.py`. 26 tests in `tests/test_validate.py`; the offload-flow gate and bounded retry are tested in `tests/test_offload.py`; full suite 212 tests, all OK.
 
 ## Objective
 
