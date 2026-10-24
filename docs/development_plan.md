@@ -294,6 +294,8 @@ Prevent delegated output from modifying unexpected files or violating request bo
 
 > **Status: PASSED (2026-10-23).** `bridge/validate.py` (`PatchValidator`) parses a returned unified diff and validates it against `repository_context.allowed_files`/`read_only_files`: an allowlisted-scope check plus detection of dependency/lock, config, binary, deletion, and path-traversal changes, returning a `PatchValidationResult` whose `valid` gate is the single decision (hard violations reject; dependency/config/deletion flags escalate to Codex review). It is wired into the offload flow in `bridge/offload.py` (`run_handoff`): on a `completed` result the gate runs before acceptance and a failed patch returns `EXIT_VALIDATION_FAILED` (4) with a `validation` key in the JSON output; a `needs_context` result retries once with the requested context appended (bounded, handoff.md section 10). `PatchValidationResult`/`PatchValidator` exported from `bridge/__init__.py`. 26 tests in `tests/test_validate.py`; the offload-flow gate and bounded retry are tested in `tests/test_offload.py`; full suite 212 tests, all OK.
 
+# Phase 8 — Codex Validation Workflow
+
 ## Objective
 
 Independently verify local-model work before accepting it.
@@ -315,6 +317,8 @@ Independently verify local-model work before accepting it.
 - Local claims are not treated as proof.
 - Validation failure can never be reported as success.
 - Two failed attempts on the same task force Codex fallback by default.
+
+> **Status: PASSED (2026-10-23).** `bridge/verification.py` (new) implements the independent apply + verify step: it resolves the repo root via Git (no hard-coded paths), creates a temporary isolated review worktree (`git worktree add`), runs `git apply --check` preflight, applies the candidate inside the worktree only, runs the project's own validation (`python -m unittest discover -s tests`, plus lint/type-check only when genuinely configured), detects unexpected tracked changes, and returns a `ValidationOutcome` (ACCEPTED_UNCHANGED / REJECTED). The local worker's self-reported `tests_run` is never trusted. It is wired into `bridge/offload.py` (`run_handoff`) after the Phase 7 scope gate: a scope-valid `completed` patch is independently verified before acceptance; a scope-invalid patch never reaches verification; failed independent verification returns `EXIT_VALIDATION_FAILED` (4) with a `verification` key in the JSON output. Files: `bridge/verification.py` (new), `bridge/offload.py`, `bridge/diagnostics.py`, `bridge/__init__.py`, `tests/test_verification.py` (new), `tests/test_offload.py`. 7 new tests; full suite 219 tests, all OK.
 
 ---
 

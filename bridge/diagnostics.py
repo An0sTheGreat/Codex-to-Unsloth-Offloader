@@ -15,7 +15,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from .schemas import HandoffRequest, ResultState, WorkerResult
+from .schemas import (HandoffRequest, ResultState, ValidationOutcome,
+                      ValidationOutcomeKind, WorkerResult)
 from .validate import PatchValidationResult
 
 _LOGGER_NAME = "unsloth.offloader"
@@ -50,17 +51,22 @@ def _safe(text: Optional[str]) -> str:
 
 
 def _fallback(result: WorkerResult,
-              validation: Optional[PatchValidationResult]) -> str:
+              validation: Optional[PatchValidationResult] = None,
+              verification: Optional[ValidationOutcome] = None) -> str:
     """One-line next-step (fallback/escalation) for the log template."""
     if validation is not None and not validation.valid:
         return "escalate to Codex (patch failed scope validation)"
+    if verification is not None and verification.outcome is not ValidationOutcomeKind.ACCEPTED_UNCHANGED:
+        return ("escalate to Codex (independent verification failed: "
+                + verification.outcome.value + ")")
     if result.state is ResultState.COMPLETED:
-        return "none (patch within scope; Codex runs final validation)"
+        return "none (patch within scope and independently verified)"
     return "continue in Codex (state=%s)" % result.state.value
 
 
 def log_handoff(request: HandoffRequest, result: WorkerResult,
                 validation: Optional[PatchValidationResult] = None,
+                verification: Optional[ValidationOutcome] = None,
                 model_alias: str = "", reason: str = "") -> str:
     """Build and emit the non-secret handoff metadata (handoff.md section 12).
 
@@ -85,7 +91,9 @@ def log_handoff(request: HandoffRequest, result: WorkerResult,
     ]
     if validation is not None:
         lines.append("Validation result: " + _safe(validation.notes))
-    lines.append("Fallback/escalation: " + _fallback(result, validation))
+    if verification is not None:
+        lines.append("Verification result: " + _safe(verification.notes))
+    lines.append("Fallback/escalation: " + _fallback(result, validation, verification))
     log_line = "\n".join(lines)
     _LOGGER.info(log_line)
     return log_line

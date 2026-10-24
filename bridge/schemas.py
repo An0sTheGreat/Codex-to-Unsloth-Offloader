@@ -277,7 +277,9 @@ class ValidationOutcome(BaseModel):
     unexpected_changes: list[str] = Field(default_factory=list, description="Paths outside the allowed scope.")
     tests_passed: bool = Field(default=False)
     lint_passed: bool = Field(default=True)
+    lint_run: bool = Field(default=False, description="Whether a lint command was actually executed; lint_passed is meaningful only when True.")
     type_checks_passed: bool = Field(default=True)
+    type_checks_run: bool = Field(default=False, description="Whether a type-check command was actually executed; type_checks_passed is meaningful only when True.")
     applied: bool = Field(default=False, description="Whether the patch was applied to a working tree.")
     notes: str = Field(default="", description="Free-form validation notes.")
 

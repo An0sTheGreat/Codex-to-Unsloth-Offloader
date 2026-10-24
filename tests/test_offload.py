@@ -11,7 +11,8 @@ import unittest
 from contextlib import contextmanager, redirect_stdout
 from unittest.mock import patch
 
-from bridge.schemas import ResultState, WorkerResult
+from bridge.schemas import (ResultState, ValidationOutcome,
+                            ValidationOutcomeKind, WorkerResult)
 from bridge.transport import MockTransport
 from bridge.offload import (
     EXIT_COMPLETED,
@@ -55,6 +56,17 @@ DEP_DIFF = (
     "+requests==2.31\n"
 )
 
+# A passing independent verification, used to isolate the scope-gate / retry
+# orchestration tests from Phase 8's real verification (the actual verify()
+# behaviour with temporary Git repositories lives in tests/test_verification.py).
+PASSING_VERIFICATION = ValidationOutcome(
+    outcome=ValidationOutcomeKind.ACCEPTED_UNCHANGED,
+    files_changed=["src/foo.py"],
+    unexpected_changes=[],
+    tests_passed=True,
+    applied=True,
+    notes="verified",
+)
 
 class TestRunHandoff(unittest.TestCase):
     def _packet(self, allowed=None, read_only=None, **kw):
@@ -71,7 +83,9 @@ class TestRunHandoff(unittest.TestCase):
             **kw,
         })
 
-    def test_completed_exit_zero(self):
+    @patch("bridge.offload.verify")
+    def test_completed_exit_zero(self, _verify):
+        _verify.return_value = PASSING_VERIFICATION
         mt = MockTransport(responses={
             "*": {
                 "state": "completed",
@@ -105,7 +119,9 @@ class TestRunHandoff(unittest.TestCase):
             code = run_handoff(mt, self._packet())
         self.assertEqual(code, EXIT_WORKER_STATE)
 
-    def test_validation_gate_accepts_in_scope_patch(self):
+    @patch("bridge.offload.verify")
+    def test_validation_gate_accepts_in_scope_patch(self, _verify):
+        _verify.return_value = PASSING_VERIFICATION
         mt = MockTransport(responses={"*": {
             "state": "completed", "summary": "added helper", "diff": IN_SCOPE_DIFF
         }})
@@ -166,7 +182,9 @@ class TestRunHandoff(unittest.TestCase):
         self.assertEqual(json.loads(buf.getvalue())["state"], "needs_context")
         self.assertNotIn("validation", json.loads(buf.getvalue()))
 
-    def test_needs_context_retry_yields_completed(self):
+    @patch("bridge.offload.verify")
+    def test_needs_context_retry_yields_completed(self, _verify):
+        _verify.return_value = PASSING_VERIFICATION
         class _Stateful(MockTransport):
             def __init__(self):
                 super().__init__()
@@ -258,7 +276,9 @@ class TestMain(unittest.TestCase):
                 code = main(["--smoke"])
         self.assertEqual(code, EXIT_UNSLOTH)
 
-    def test_main_packet_file(self):
+    @patch("bridge.offload.verify")
+    def test_main_packet_file(self, _verify):
+        _verify.return_value = PASSING_VERIFICATION
         mt = MockTransport()
         packet = json.dumps({
             "task": "Add helper",

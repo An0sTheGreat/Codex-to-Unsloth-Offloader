@@ -42,10 +42,11 @@ from .schemas import (
     LengthLevel,
     ResultState,
     RepositoryContext,
+    ValidationOutcomeKind,
 )
 from .transport import UnslothApiTransport
 from .validate import PatchValidator
-
+from .verification import verify
 
 EXIT_COMPLETED = 0
 EXIT_WORKER_STATE = 1
@@ -77,11 +78,21 @@ def _smoke_request() -> HandoffRequest:
 
 
 def run_handoff(transport, raw_packet: str, *, max_context_retries: int = 1) -> int:
-    """Validate the packet, send it, run the patch scope gate, print the result.
+    """Validate the packet, send it, gate and verify the patch, print the result.
 
     On a ``needs_context`` result the requested context is appended to the
     request and the task is sent again, up to ``max_context_retries`` times
-    (handoff.md section 10); it never loops. Returns an exit code.
+    (handoff.md section 10); it never loops.
+
+    A ``completed`` result must pass two independent checks before it is
+    reported as success (handoff.md section 9):
+      1. the Phase 7 patch scope gate (:class:`PatchValidator`);
+      2. the Phase 8 independent verification (:func:`verification.verify`),
+         which applies the candidate to an isolated review worktree and runs
+         the project's own validation. The local worker's self-reported
+         ``tests_run`` is never trusted.
+
+    Returns an exit code.
     """
     request = HandoffRequest.model_validate(json.loads(raw_packet))
     result = transport.send(request)
@@ -101,13 +112,24 @@ def run_handoff(transport, raw_packet: str, *, max_context_retries: int = 1) -> 
 
     payload = result.model_dump()
     validation = None
+    verification = None
     if result.state is ResultState.COMPLETED:
+        # Phase 7: patch scope gate (must remain first; never bypassed).
         validation = PatchValidator().validate(result, request)
         payload["validation"] = validation.model_dump()
+        # Phase 8: independent apply + verify (only for a scope-valid patch).
+        if validation.valid:
+            verification = verify(result, request)
+            payload["verification"] = verification.model_dump()
 
     print(json.dumps(payload, indent=2))
-    log_handoff(request, result, validation)
+    log_handoff(request, result, validation, verification)
 
+    # A scope-valid candidate that fails independent verification is a failure,
+    # never a success (handoff.md section 9: validation failure must never be
+    # reported as success).
+    if verification is not None and verification.outcome is not ValidationOutcomeKind.ACCEPTED_UNCHANGED:
+        return EXIT_VALIDATION_FAILED
     if validation is not None and not validation.valid:
         return EXIT_VALIDATION_FAILED
     return EXIT_COMPLETED if result.state is ResultState.COMPLETED else EXIT_WORKER_STATE

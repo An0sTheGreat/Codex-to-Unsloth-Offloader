@@ -281,7 +281,12 @@ Do not log prompt bodies or source snippets by default, unless explicitly enable
   - `bridge/diagnostics.py` (`log_handoff`/`configure_logging`) — structured, log-safe handoff diagnostics emitting the handoff.md section 12 template at the configured log level; prompt bodies, source snippets, and secrets are never logged.
   - Files: `bridge/offload.py`, `bridge/diagnostics.py` (new), `bridge/__init__.py`, `tests/test_offload.py`, `tests/test_diagnostics.py` (new), `docs/development_plan.md`, `docs/readme.md`.
   - Validation: 212 tests pass.
-  - Note: Phase 8 (Codex Validation Workflow) is partially done (retry/fallback + diagnostics); applying patches to a working tree, running tests/lint, and recording accepted/edited/rejected outcomes remain.
+
+- **Phase 8 — Codex Validation Workflow (2026-10-23): DONE.**
+  - `bridge/verification.py` (new): independent apply + verify. Resolves the repo root via Git (no hard-coded paths), creates an isolated review worktree, runs `git apply --check` preflight, applies the candidate inside the worktree only, runs the project validation, and detects unexpected tracked changes. Returns a `ValidationOutcome` (ACCEPTED_UNCHANGED / REJECTED). Worker self-reported `tests_run` is never trusted.
+  - Wired into `bridge/offload.py` (`run_handoff`) after the Phase 7 scope gate: a scope-valid `completed` patch is independently verified before acceptance; a scope-invalid patch never reaches verification. Failed independent verification returns `EXIT_VALIDATION_FAILED` (4) with a `verification` key in the JSON output.
+  - Files: `bridge/verification.py` (new), `bridge/offload.py`, `bridge/diagnostics.py`, `bridge/__init__.py`, `tests/test_verification.py` (new), `tests/test_offload.py`.
+  - Validation: 219 tests pass.
 
 ## Live smoke command (user shell)
 ```powershell
@@ -309,4 +314,4 @@ python -m bridge.offload --smoke
 ```
 
 ## Next work
-Phase 8 — Codex Validation Workflow: apply candidate patches to a reviewable working tree, run targeted tests/lint/type checks, and record the accepted/edited/rejected outcome. Then Phase 9 — Automatic Handoff Orchestration (assess -> route -> package -> send -> parse -> validate -> fallback, emitting the Coding Task Assessment footer).
+Phase 8 is complete. Next: Phase 9 — Automatic Handoff Orchestration (assess -> route -> package -> send -> parse -> validate -> fallback, emitting the Coding Task Assessment footer). The two-failure Codex fallback rule (handoff.md section 9) is wired in Phase 9; Phase 8's `verification` key in the JSON output supplies the per-attempt result information it needs.

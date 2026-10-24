@@ -52,6 +52,7 @@ from .routing import Router, RoutingDecision, PolicyRouter
 from .transport import MockTransport, Transport, UnslothApiTransport
 from .context import ContextPackager, estimate_tokens
 from .validate import PatchValidator
+from .verification import verify
 from .diagnostics import configure_logging, log_handoff
 
 __version__ = "0.1.0"
@@ -104,6 +105,8 @@ __all__ = [
     # patch scope validation
     "PatchValidationResult",
     "PatchValidator",
+    # verification
+    "verify",
     # diagnostics
     "configure_logging",
     "log_handoff",
