@@ -329,40 +329,67 @@ Report assumptions and validation performed in the assumptions field.
             "tests_run": obj.get("tests_run") or [],
         })
 
-    def send(self, request: HandoffRequest) -> WorkerResult:
-        # /v1/chat/completions is the reliable endpoint on the current Unsloth
-        # build (returns valid JSON); /v1/responses is kept as the fallback
-        # since it hangs / returns prose on Unsloth Studio v0.1.909-beta.
+    def _submit(self, request: HandoffRequest,
+                correction_error: Optional[str] = None) -> dict:
+        """Send the request to the model and return the raw response dict.
+
+        Prefers ``/v1/chat/completions`` and falls back to ``/v1/responses``
+        when the primary request raises an ``UnslothError``. When ``correction_error``
+        is provided, a one-shot correction note is prepended to the user prompt so
+        the model can repair a previous schema/format violation (Phase 6 task 6).
+        Raises ``UnslothError`` if both endpoints fail.
+        """
+        user_content = self._worker_prompt(request)
+        if correction_error:
+            user_content = ("CORRECTION: your previous response was invalid: "
+                            "%s. Retry now. Return ONLY a single valid JSON object "
+                            "matching the schema exactly; no prose or markdown fences.\n\n"
+                            % correction_error) + user_content
         try:
-            data = self._send_with_retry("/v1/chat/completions", {
+            return self._send_with_retry("/v1/chat/completions", {
                 "model": self._config.local_model_alias,
                 "messages": [{"role": "system", "content": self._worker_instructions()},
-                             {"role": "user", "content": self._worker_prompt(request)}],
+                             {"role": "user", "content": user_content}],
                 "temperature": 0.2,
                 "max_tokens": 4096,
             })
         except UnslothError:
             try:
-                data = self._send_with_retry("/v1/responses", {
+                return self._send_with_retry("/v1/responses", {
                     "model": self._config.local_model_alias,
                     "instructions": self._worker_instructions(),
-                    "input": [{"type": "message", "role": "user", "content": self._worker_prompt(request)}],
+                    "input": [{"type": "message", "role": "user", "content": user_content}],
                     "output_format": "json_object",
                     "temperature": 0.2,
                     "max_output_tokens": 4096,
                 })
             except UnslothError:
                 raise
+
+    def send(self, request: HandoffRequest) -> WorkerResult:
+        # /v1/chat/completions is the reliable endpoint on the current Unsloth
+        # build (returns valid JSON); /v1/responses is kept as the fallback
+        # since it hangs / returns prose on Unsloth Studio v0.1.909-beta.
+        data = self._submit(request)
         try:
             return self._parse_worker_text(self._extract_output(data))
-        except ValueError:
-            return WorkerResult(state=ResultState.INVALID_OUTPUT,
-                                summary="model output failed validation",
-                                error="model output did not match expected schema")
-        except MalformedOutputError as exc:
-            return WorkerResult(state=ResultState.INVALID_OUTPUT,
-                                summary="model output could not be parsed",
-                                error=str(exc))
+        except (ValueError, MalformedOutputError) as exc:
+            # One correction retry for schema/format violations (Phase 6 task 6).
+            # Bounded: exactly one re-prompt. If the corrected response is still
+            # invalid, or the correction request itself fails, return
+            # INVALID_OUTPUT so malformed output never reaches the validation
+            # gate unchecked.
+            try:
+                data = self._submit(request, correction_error=str(exc))
+                return self._parse_worker_text(self._extract_output(data))
+            except (ValueError, MalformedOutputError):
+                return WorkerResult(state=ResultState.INVALID_OUTPUT,
+                                    summary="model output failed validation after one correction retry",
+                                    error="model output did not match expected schema")
+            except UnslothError as exc2:
+                return WorkerResult(state=ResultState.INVALID_OUTPUT,
+                                    summary="model output could not be parsed; correction retry failed",
+                                    error="%s (correction retry failed: %s)" % (str(exc), str(exc2)))
 
 
 __all__ = ["Transport", "MockTransport", "UnslothApiTransport"]

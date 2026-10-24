@@ -352,6 +352,65 @@ class TestUnslothApiTransport(unittest.TestCase):
             with self.assertRaises(ApiUnavailableError):
                 t.send(make_request())
 
+    # -- correction retry (Phase 6 task 6) -------------------------------------
+
+    def test_send_correction_retry_recovers(self):
+        # First response malformed (non-JSON); the single correction retry
+        # re-prompts and the corrected response is valid -> completed.
+        with patch.dict(os.environ, {self.KEY_VAR: self.KEY}):
+            t = self._t(max_retries=0)
+            good = {"state": "completed", "summary": "ok", "diff": "+x"}
+            calls = []
+            def post(url, **kw):
+                calls.append(url)
+                if len(calls) == 1:
+                    return self._resp(200, {"output": [{"type": "message",
+                                                       "text": "not json"}]})
+                return self._resp(200, self._responses_body(good, "text"))
+            t._session = MagicMock()
+            t._session.post = post
+            res = t.send(make_request())
+            self.assertEqual(res.state, "completed")
+            self.assertEqual(res.summary, "ok")
+            self.assertEqual(len(calls), 2)
+
+    def test_send_correction_retry_still_invalid(self):
+        # First response invalid schema; the single correction retry is also
+        # invalid -> invalid_output (bounded, no unbounded loop).
+        with patch.dict(os.environ, {self.KEY_VAR: self.KEY}):
+            t = self._t(max_retries=0)
+            bad = {"state": "zzz_not_valid", "summary": "x"}
+            calls = []
+            def post(url, **kw):
+                calls.append(url)
+                return self._resp(200, self._responses_body(bad, "text"))
+            t._session = MagicMock()
+            t._session.post = post
+            res = t.send(make_request())
+            self.assertEqual(res.state, "invalid_output")
+            self.assertEqual(len(calls), 2)
+
+    def test_correction_prompt_includes_previous_error(self):
+        # The correction re-prompt must carry the previous error so the model
+        # can repair it (not a blind re-send).
+        with patch.dict(os.environ, {self.KEY_VAR: self.KEY}):
+            t = self._t(max_retries=0)
+            bad = {"state": "zzz_not_valid", "summary": "x"}
+            good = {"state": "completed", "summary": "ok", "diff": "+x"}
+            payloads = []
+            def post(url, **kw):
+                payloads.append(kw.get("json"))
+                if len(payloads) == 1:
+                    return self._resp(200, self._responses_body(bad, "text"))
+                return self._resp(200, self._responses_body(good, "text"))
+            t._session = MagicMock()
+            t._session.post = post
+            t.send(make_request())
+            second_user = payloads[1]["messages"][1]["content"]
+            self.assertIn("CORRECTION:", second_user)
+            self.assertIn("Retry now.", second_user)
+            self.assertIn("zzz_not_valid", second_user)
+
 
 if __name__ == "__main__":
     unittest.main()
