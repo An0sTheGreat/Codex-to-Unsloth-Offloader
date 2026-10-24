@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import ast;ast.parse(open('tests/test_orchestrator.py').read());print(1)
+               ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "Y:\Programs\Unsloth\studio\python\cpython-3.13-windows-x86_64-none\Lib\ast.py", line 50, in parse
+    return compile(source, filename, mode, flags,
+                   _feature_version=feature_version, optimize=optimize)
+  File "<unknown>", line 160
+    within budget and then falls back to Codex. The worker's self-report is
+                                                          ^
+SyntaxError: unterminated string literal (detected at line 160)

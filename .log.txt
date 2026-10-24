@@ -1,0 +1,12 @@
+a89865a Partial Update
+3d22cb5 Fix .gitignore: remove stray quotes from unsloth-tmp/ entry
+36844af Phase 8 complete: independent apply + verify of local-model candidate patches. New bridge/verification.py applies candidate to an isolated git worktree, runs git apply --check preflight, project validation (unittest + lint/type-check when configured), and unexpected-change detection; returns ValidationOutcome. Wired into bridge/offload.py after the Phase 7 scope gate; failed verification returns EXIT_VALIDATION_FAILED (4) with a verification key in JSON. Added lint_run/type_checks_run to ValidationOutcome, log-safe verification diagnostics, 7 new tests (tests/test_verification.py), updated docs. 219 tests pass.
+a38b167 Phase 7 completion, phase 8 partial completion
+375ed43 Phase 6 PASSED
+237ca4e Handoff.md update
+50afd04 Docs: add completion-log entry for phase-status reconciliation in handoff.md
+1b62d4d Docs: mark Phases 1, 2, 4, 5 as PASSED in development_plan.md; add missing Phase 4 entry in readme.md; fix stale probe note in handoff.md
+a87b630 Docs Update
+0229d70 Phase 5 Complete
+11af75d Documentation Update
+a4253dc Update prior to smoke test

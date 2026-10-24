@@ -68,16 +68,16 @@ def send_with_context_retry(transport: Transport, request: HandoffRequest,
     bound, and a non-needs-context state is returned unchanged.
     """
     result = transport.send(request)
+    running_summary = request.repository_context.summary
     for _ in range(max_context_retries):
         if result.state is ResultState.COMPLETED:
             break
         if result.state is not ResultState.NEEDS_CONTEXT or not result.context_needed.strip():
             break
-        request.repository_context.summary = (
-            request.repository_context.summary + "\n"
-            + "Worker requested missing context: " + result.context_needed
-        )
-        result = transport.send(request)
+        req2 = request.model_copy(deep=True)
+        running_summary += "\nWorker requested missing context: " + result.context_needed
+        req2.repository_context.summary = running_summary
+        result = transport.send(req2)
     return result
 
 
@@ -177,36 +177,42 @@ class Orchestrator:
                                 notes=notes)
 
         # 5. Send / parse / validate / verify / fallback for each subrequest.
-        subtask_outcomes: list = []
-        transport_failed = False
-        for request in decision.subrequests:
-            outcome = self._process_subtask(request, max_context_retries,
-                                            max_validation_failures)
-            subtask_outcomes.append(outcome)
-            if outcome.failure_kind is FailureKind.TRANSPORT:
-                transport_failed = True
-                notes.append("transport error during delegation; stopping and "
-                             "returning the task to Codex.")
-                break
+        try:
+            subtask_outcomes: list = []
+            transport_failed = False
+            for request in decision.subrequests:
+                outcome = self._process_subtask(request, max_context_retries,
+                                                max_validation_failures)
+                subtask_outcomes.append(outcome)
+                if outcome.failure_kind is FailureKind.TRANSPORT:
+                    transport_failed = True
+                    notes.append("transport error during delegation; stopping and "
+                                 "returning the task to Codex.")
+                    break
 
-        accepted_count = sum(1 for o in subtask_outcomes if o.accepted)
-        if transport_failed:
-            final_state = FinalState.FAILED
-        elif decision.kind is RoutingDecisionKind.FULL_LOCAL:
-            final_state = (FinalState.COMPLETED
-                           if accepted_count == len(subtask_outcomes)
-                           else FinalState.FAILED)
-        else:  # PARTIAL_LOCAL
-            final_state = FinalState.PARTIAL if accepted_count > 0 else FinalState.FAILED
+            accepted_count = sum(1 for o in subtask_outcomes if o.accepted)
+            if transport_failed:
+                final_state = FinalState.KEEP_IN_CODEX
+            elif decision.kind is RoutingDecisionKind.FULL_LOCAL:
+                final_state = (FinalState.COMPLETED
+                               if accepted_count == len(subtask_outcomes)
+                               else FinalState.KEEP_IN_CODEX)
+            else:  # PARTIAL_LOCAL
+                final_state = FinalState.PARTIAL if accepted_count > 0 else FinalState.KEEP_IN_CODEX
 
-        for o in subtask_outcomes:
-            if o.notes:
-                notes.append(o.notes)
+            for o in subtask_outcomes:
+                if o.notes:
+                    notes.append(o.notes)
 
-        return self._result(task_description, assessment, decision,
-                            subtask_outcomes=subtask_outcomes,
-                            final_state=final_state,
-                            notes=notes)
+            return self._result(task_description, assessment, decision,
+                                subtask_outcomes=subtask_outcomes,
+                                final_state=final_state,
+                                notes=notes)
+        except KeyboardInterrupt:
+            return self._result(task_description, assessment, decision,
+                                subtask_outcomes=subtask_outcomes,
+                                final_state=FinalState.CANCELLED,
+                                notes=list(notes) + ["run cancelled by user; partial results retained."])
 
     # -- private ----------------------------------------------------------
 
@@ -324,8 +330,12 @@ class Orchestrator:
                 failure_kind = FailureKind.WORKER
                 detail = (worker.context_needed or worker.decline_reason
                           or worker.error or "")
-                notes_parts.append("attempt %d: worker state=%s (%s)"
-                                   % (attempt, worker.state.value, detail))
+                return SubtaskOutcome(
+                    request_id=request.request_id, task=request.task,
+                    attempts=attempt, worker_result=worker, failure_kind=failure_kind,
+                    accepted=False, validation=None, verification=None, notes=
+"attempt %d: terminal worker state=%s (%s); no further sends." % (attempt,
+                worker.state.value, detail))
 
         return SubtaskOutcome(
             request_id=request.request_id,

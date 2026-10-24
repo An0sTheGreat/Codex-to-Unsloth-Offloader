@@ -1,0 +1,13 @@
+commit a89865a48c708e06df18f4cc9c10a63f78466612
+Author: Codex <codex@localhost>
+Date:   Fri Oct 23 22:55:21 2026 -0500
+
+    Partial Update
+
+ _runner.py             |  11 ++
+ _test_out.txt          |  11 ++
+ bridge/offload.py      |  82 +++++++++---
+ bridge/orchestrator.py | 351 +++++++++++++++++++++++++++++++++++++++++++++++++
+ bridge/schemas.py      |  77 +++++++++++
+ tests/test_offload.py  |  18 ++-
+ 6 files changed, 532 insertions(+), 18 deletions(-)
